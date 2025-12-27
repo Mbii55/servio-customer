@@ -1,5 +1,5 @@
-/// src/screens/booking/BookServiceScreen.tsx
-import React, { useEffect, useState, useMemo } from 'react';
+// src/screens/booking/BookServiceScreen.tsx
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import {
   TextInput,
   Alert,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { COLORS, SIZES } from '../../constants/colors';
 import { useBooking } from '../../context/BookingContext';
@@ -24,7 +26,6 @@ import api from '../../services/api';
 import { Service, ServiceAddon, Address } from '../../types';
 import { CalendarPicker } from '../../components/booking/CalendarPicker';
 import { TimeSlotPicker } from '../../components/booking/TimeSlotPicker';
-import { Button } from '../../components/common/Button';
 
 type Params = { serviceId: string };
 type NavProp = NativeStackNavigationProp<any>;
@@ -48,14 +49,12 @@ export const BookServiceScreen: React.FC = () => {
   const [addons, setAddons] = useState<ServiceAddon[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
 
-  // Form state
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeStr, setSelectedTimeStr] = useState<string | null>(null);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [customerNotes, setCustomerNotes] = useState('');
 
-  // ✅ Availability slots state (NEW)
   const [timeSlots, setTimeSlots] = useState<SlotUI[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsMessage, setSlotsMessage] = useState<string>('');
@@ -67,8 +66,28 @@ export const BookServiceScreen: React.FC = () => {
     return () => {
       resetBookingData();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceId]);
+
+  // Refresh addresses when screen comes back into focus (e.g., after adding new address)
+  useFocusEffect(
+    useCallback(() => {
+      if (currentStep === 'address') {
+        loadAddresses();
+      }
+    }, [currentStep])
+  );
+
+  const loadAddresses = async (): Promise<Address[]> => {
+    try {
+      const addressesData = await getMyAddresses();
+      setAddresses(addressesData);
+      return addressesData;
+    } catch (error) {
+      console.error('Failed to load addresses:', error);
+      setAddresses([]);
+      return [];
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -76,12 +95,11 @@ export const BookServiceScreen: React.FC = () => {
       const [serviceData, addonsData, addressesData] = await Promise.all([
         getServiceById(serviceId),
         loadAddons(serviceId),
-        getMyAddresses(),
+        loadAddresses(),
       ]);
 
       setService(serviceData);
       setAddons(addonsData);
-      setAddresses(addressesData);
 
       const defaultAddr = addressesData.find((a) => a.is_default);
       if (defaultAddr) {
@@ -106,71 +124,56 @@ export const BookServiceScreen: React.FC = () => {
     }
   };
 
-  // ✅ Helper: Build a day list in 30-min increments (08:00 → 20:00)
- const buildFullHalfHourDay = () => {
-  const out: string[] = [];
-  for (let hour = 8; hour <= 23; hour++) { // ✅ Changed from 20 to 23
-    for (let minute = 0; minute < 60; minute += 30) {
-      if (hour === 23 && minute > 30) continue; // ✅ Stop at 23:30
-      out.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+  const loadSlotsForSelectedDate = async (date: Date) => {
+    if (!service) return;
+
+    const providerId =
+      (service as any)?.provider?.id ||
+      (service as any)?.provider_id ||
+      (service as any)?.providerId;
+
+    const duration = Number((service as any)?.duration_minutes || 60);
+
+    if (!providerId) {
+      setTimeSlots([]);
+      setSlotsMessage('Provider not found for this service');
+      return;
     }
-  }
-  return out;
-};
 
-// ✅ Fetch provider slots for selected date from backend (NEW)
-const loadSlotsForSelectedDate = async (date: Date) => {
-  if (!service) return;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
 
-  const providerId =
-    (service as any)?.provider?.id ||
-    (service as any)?.provider_id ||
-    (service as any)?.providerId;
-
-  const duration = Number((service as any)?.duration_minutes || 60);
-
-  if (!providerId) {
+    setSlotsLoading(true);
+    setSlotsMessage('');
+    setSelectedTimeStr(null);
     setTimeSlots([]);
-    setSlotsMessage('Provider not found for this service');
-    return;
-  }
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const dateStr = `${year}-${month}-${day}`;
+    try {
+      const res = await api.get(`/availability/provider/${providerId}/slots`, {
+        params: { date: dateStr, serviceDuration: String(duration) },
+      });
 
-  setSlotsLoading(true);
-  setSlotsMessage('');
-  setSelectedTimeStr(null);
-  setTimeSlots([]);
+      const backendSlots = (res.data?.slots || []) as string[];
+      const uiSlots: SlotUI[] = backendSlots.map((time) => ({
+        time,
+        available: true,
+      }));
 
-  try {
-    const res = await api.get(`/availability/provider/${providerId}/slots`, {
-      params: { date: dateStr, serviceDuration: String(duration) },
-    });
+      setTimeSlots(uiSlots);
 
-    // ✅ Just map backend slots directly - backend only returns available times
-    const backendSlots = (res.data?.slots || []) as string[];
-    const uiSlots: SlotUI[] = backendSlots.map((time) => ({
-      time,
-      available: true, // Backend only returns available slots
-    }));
-
-    setTimeSlots(uiSlots);
-
-    if (uiSlots.length === 0) {
-      setSlotsMessage(res.data?.message || 'No available slots on this date');
+      if (uiSlots.length === 0) {
+        setSlotsMessage(res.data?.message || 'No available slots on this date');
+      }
+    } catch (e: any) {
+      console.error('Error loading slots:', e);
+      setTimeSlots([]);
+      setSlotsMessage(e?.response?.data?.error || 'Failed to load available slots');
+    } finally {
+      setSlotsLoading(false);
     }
-  } catch (e: any) {
-    console.error('❌ Error loading slots:', e);
-    setTimeSlots([]);
-    setSlotsMessage(e?.response?.data?.error || 'Failed to load available slots');
-  } finally {
-    setSlotsLoading(false);
-  }
-};
-
+  };
 
   const pricing = useMemo(() => {
     const servicePrice = Number(service?.base_price || 0);
@@ -196,12 +199,10 @@ const loadSlotsForSelectedDate = async (date: Date) => {
     if (!selectedTimeStr) {
       newErrors.time = 'Please select a time';
     } else {
-      // ✅ Ensure time is actually available (NEW safety)
       const slot = timeSlots.find((s) => s.time === selectedTimeStr);
       if (slot && !slot.available) {
         newErrors.time = 'This time is not available. Please choose another slot.';
       }
-      // If slots are loaded but selection is not in list, also block it:
       if (timeSlots.length > 0 && !slot) {
         newErrors.time = 'Please select a valid time slot.';
       }
@@ -248,55 +249,54 @@ const loadSlotsForSelectedDate = async (date: Date) => {
     }
   };
 
-const handleSubmit = async () => {
-  if (!selectedDate || !selectedTimeStr) {
-    Alert.alert('Error', 'Please complete all required fields');
-    return;
-  }
+  const handleSubmit = async () => {
+    if (!selectedDate || !selectedTimeStr) {
+      Alert.alert('Error', 'Please complete all required fields');
+      return;
+    }
 
-  const slot = timeSlots.find((s) => s.time === selectedTimeStr);
-  if (slot && !slot.available) {
-    Alert.alert('Error', 'This time slot is not available. Please choose another one.');
-    return;
-  }
+    const slot = timeSlots.find((s) => s.time === selectedTimeStr);
+    if (slot && !slot.available) {
+      Alert.alert('Error', 'This time slot is not available. Please choose another one.');
+      return;
+    }
 
-  setSubmitting(true);
+    setSubmitting(true);
 
-  try {
-    // ✅ FIX: Format date without timezone conversion
-    const year = selectedDate.getFullYear();
-    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-    const day = String(selectedDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
-    
-    const timeStr = selectedTimeStr + ':00';
+    try {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      
+      const timeStr = selectedTimeStr + ':00';
 
-    const bookingInput = {
-      service_id: serviceId,
-      scheduled_date: dateStr,
-      scheduled_time: timeStr,
-      address_id: selectedAddressId || undefined,
-      addons:
-        selectedAddonIds.length > 0
-          ? selectedAddonIds.map((id) => ({ addon_id: id, quantity: 1 }))
-          : undefined,
-      customer_notes: customerNotes || undefined,
-      payment_method: 'cash' as const,
-    };
+      const bookingInput = {
+        service_id: serviceId,
+        scheduled_date: dateStr,
+        scheduled_time: timeStr,
+        address_id: selectedAddressId || undefined,
+        addons:
+          selectedAddonIds.length > 0
+            ? selectedAddonIds.map((id) => ({ addon_id: id, quantity: 1 }))
+            : undefined,
+        customer_notes: customerNotes || undefined,
+        payment_method: 'cash' as const,
+      };
 
-    const booking = await createBooking(bookingInput);
+      const booking = await createBooking(bookingInput);
 
-    resetBookingData();
-    navigation.replace('BookingSuccess', { bookingId: booking.id });
-  } catch (error: any) {
-    Alert.alert(
-      'Booking Failed',
-      error.response?.data?.error || 'Failed to create booking. Please try again.'
-    );
-  } finally {
-    setSubmitting(false);
-  }
-};
+      resetBookingData();
+      navigation.replace('BookingSuccess', { bookingId: booking.id });
+    } catch (error: any) {
+      Alert.alert(
+        'Booking Failed',
+        error.response?.data?.error || 'Failed to create booking. Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const toggleAddon = (addonId: string) => {
     setSelectedAddonIds((prev) =>
@@ -312,19 +312,45 @@ const handleSubmit = async () => {
     return `${hour12}:${minute} ${period}`;
   };
 
+  const handleAddAddressPress = async () => {
+    // Navigate to AddAddress screen
+    navigation.navigate('AddAddress', {
+      onAddressAdded: async () => {
+        // This callback will be triggered when address is successfully added
+        const updatedAddresses = await loadAddresses();
+        
+        // Auto-select the newly added address if it's the only one or if it's set as default
+        if (updatedAddresses.length > 0) {
+          const newDefault = updatedAddresses.find(a => a.is_default);
+          if (newDefault) {
+            setSelectedAddressId(newDefault.id);
+          } else if (updatedAddresses.length === 1) {
+            // If only one address exists, select it
+            setSelectedAddressId(updatedAddresses[0].id);
+          }
+        }
+      }
+    });
+  };
+
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading booking details...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!service) {
     return (
-      <View style={styles.center}>
-        <Text>Service not found</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>Service not found</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -335,68 +361,91 @@ const handleSubmit = async () => {
   const minDate = new Date();
   minDate.setHours(0, 0, 0, 0);
 
-  // ✅ Optional: match backend “30 days ahead” rule (NEW)
   const maxDate = new Date(minDate);
   maxDate.setDate(maxDate.getDate() + 30);
 
+  const steps = [
+    { key: 'datetime', label: 'Date & Time', icon: 'calendar' },
+    { key: 'address', label: 'Location', icon: 'location' },
+    { key: 'addons', label: 'Add-ons', icon: 'add-circle' },
+    { key: 'review', label: 'Review', icon: 'checkmark-circle' },
+  ];
+
+  const currentStepIndex = steps.findIndex(s => s.key === currentStep);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Book Service</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Progress Steps */}
-      <View style={styles.progressContainer}>
-        <StepIndicator
-          step={1}
-          label="Date & Time"
-          active={currentStep === 'datetime'}
-          completed={['address', 'addons', 'review'].includes(currentStep)}
-        />
-        <View style={styles.progressLine} />
-        <StepIndicator
-          step={2}
-          label="Address"
-          active={currentStep === 'address'}
-          completed={['addons', 'review'].includes(currentStep)}
-        />
-        <View style={styles.progressLine} />
-        <StepIndicator
-          step={3}
-          label="Add-ons"
-          active={currentStep === 'addons'}
-          completed={currentStep === 'review'}
-        />
-        <View style={styles.progressLine} />
-        <StepIndicator step={4} label="Review" active={currentStep === 'review'} completed={false} />
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Service Info Card */}
-        <View style={styles.serviceCard}>
-          <Text style={styles.serviceTitle}>{service.title}</Text>
-          <Text style={styles.serviceMeta}>by {shopName}</Text>
-          <Text style={styles.servicePrice}>QAR {Number(service.base_price).toFixed(2)}</Text>
+      <SafeAreaView style={styles.headerSafe}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="close" size={28} color={COLORS.text.primary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>{service.title}</Text>
+            <Text style={styles.headerSubtitle}>by {shopName}</Text>
+          </View>
+          <View style={styles.stepIndicator}>
+            <Text style={styles.stepIndicatorText}>{currentStepIndex + 1}/4</Text>
+          </View>
         </View>
 
-        {/* Step 1: Date & Time */}
+        {/* Step Pills */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.stepPillsContainer}
+        >
+          {steps.map((step, index) => {
+            const isActive = step.key === currentStep;
+            const isCompleted = index < currentStepIndex;
+            
+            return (
+              <View key={step.key} style={styles.stepPillWrapper}>
+                {isActive ? (
+                  <LinearGradient
+                    colors={[COLORS.primary, COLORS.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.stepPill}
+                  >
+                    <Ionicons name={step.icon as any} size={16} color="#FFF" />
+                    <Text style={styles.stepPillTextActive}>{step.label}</Text>
+                  </LinearGradient>
+                ) : (
+                  <View style={[styles.stepPill, isCompleted && styles.stepPillCompleted]}>
+                    <Ionicons 
+                      name={isCompleted ? 'checkmark' : `${step.icon}-outline` as any} 
+                      size={16} 
+                      color={isCompleted ? COLORS.success : COLORS.text.secondary} 
+                    />
+                    <Text style={[styles.stepPillText, isCompleted && styles.stepPillTextCompleted]}>
+                      {step.label}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      </SafeAreaView>
+
+      {/* Content */}
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* DateTime Step */}
         {currentStep === 'datetime' && (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>When do you need this service?</Text>
+            <Text style={styles.questionText}>When do you need this service?</Text>
 
             <CalendarPicker
               selectedDate={selectedDate}
               onDateSelect={(date) => {
                 setSelectedDate(date);
-
-                // ✅ NEW: fetch availability for this date
                 loadSlotsForSelectedDate(date);
-
                 setErrors((prev) => {
                   const newErrors = { ...prev };
                   delete newErrors.date;
@@ -407,23 +456,26 @@ const handleSubmit = async () => {
               maxDate={maxDate}
             />
 
-            {errors.date && <Text style={styles.errorText}>{errors.date}</Text>}
+            {errors.date && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={16} color={COLORS.danger} />
+                <Text style={styles.errorText}>{errors.date}</Text>
+              </View>
+            )}
 
             {selectedDate && (
-              <View style={{ marginTop: 20 }}>
+              <View style={styles.timeSlotsSection}>
+                <Text style={styles.sectionLabel}>Select Time</Text>
                 {slotsLoading ? (
-                  <View style={{ paddingVertical: 16 }}>
+                  <View style={styles.loadingSlots}>
                     <ActivityIndicator size="small" color={COLORS.primary} />
-                    <Text style={{ marginTop: 8, color: COLORS.text.secondary }}>
-                      Loading available times...
-                    </Text>
+                    <Text style={styles.loadingSlotsText}>Loading available times...</Text>
                   </View>
                 ) : (
                   <>
                     <TimeSlotPicker
                       selectedTime={selectedTimeStr}
                       onTimeSelect={(time) => {
-                        // Optional extra safety: ignore taps on blocked slots
                         const slot = timeSlots.find((s) => s.time === time);
                         if (slot && !slot.available) return;
 
@@ -434,490 +486,589 @@ const handleSubmit = async () => {
                           return newErrors;
                         });
                       }}
-                      // ✅ NEW: pass computed slots so UI disables blocked times
                       timeSlots={timeSlots}
                     />
 
                     {!!slotsMessage && (
-                      <Text style={{ marginTop: 10, color: COLORS.text.secondary }}>
-                        {slotsMessage}
-                      </Text>
+                      <View style={styles.infoBox}>
+                        <Ionicons name="information-circle" size={18} color={COLORS.info} />
+                        <Text style={styles.infoText}>{slotsMessage}</Text>
+                      </View>
                     )}
                   </>
                 )}
 
-                {errors.time && <Text style={styles.errorText}>{errors.time}</Text>}
+                {errors.time && (
+                  <View style={styles.errorBox}>
+                    <Ionicons name="alert-circle" size={16} color={COLORS.danger} />
+                    <Text style={styles.errorText}>{errors.time}</Text>
+                  </View>
+                )}
               </View>
             )}
 
             {service.duration_minutes && (
-              <View style={styles.infoBox}>
-                <Ionicons name="information-circle-outline" size={20} color={COLORS.info} />
-                <Text style={styles.infoText}>
-                  Estimated duration: {service.duration_minutes} minutes
+              <View style={styles.durationBox}>
+                <Ionicons name="time" size={18} color={COLORS.primary} />
+                <Text style={styles.durationText}>
+                  Service duration: <Text style={styles.durationValue}>{service.duration_minutes} min</Text>
                 </Text>
               </View>
             )}
           </View>
         )}
 
-        {/* Step 2: Address */}
+        {/* Address Step */}
         {currentStep === 'address' && (
           <View style={styles.stepContent}>
-            <View style={styles.stepHeader}>
-              <Text style={styles.stepTitle}>Where should we come?</Text>
+            <View style={styles.questionRow}>
+              <Text style={styles.questionText}>Where should we come?</Text>
               <TouchableOpacity
-                onPress={() => navigation.navigate('AddAddress')}
-                style={styles.addButton}
+                onPress={handleAddAddressPress}
+                style={styles.addNewButton}
               >
-                <Ionicons name="add-circle-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.addButtonText}>Add New</Text>
+                <Ionicons name="add" size={18} color={COLORS.primary} />
+                <Text style={styles.addNewText}>Add New</Text>
               </TouchableOpacity>
             </View>
 
             {addresses.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="location-outline" size={48} color={COLORS.text.light} />
-                <Text style={styles.emptyText}>No addresses yet</Text>
-                <Button
-                  title="Add Address"
-                  onPress={() => navigation.navigate('AddAddress')}
-                  variant="primary"
-                  style={{ marginTop: 16 }}
-                />
+                <View style={styles.emptyIcon}>
+                  <Ionicons name="location-outline" size={48} color={COLORS.text.light} />
+                </View>
+                <Text style={styles.emptyTitle}>No addresses saved</Text>
+                <Text style={styles.emptySubtitle}>Add an address to continue with your booking</Text>
+                <TouchableOpacity
+                  style={styles.emptyButton}
+                  onPress={handleAddAddressPress}
+                >
+                  <LinearGradient
+                    colors={[COLORS.primary, COLORS.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.emptyButtonGradient}
+                  >
+                    <Ionicons name="add" size={20} color="#FFF" />
+                    <Text style={styles.emptyButtonText}>Add Address</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.addressList}>
-                {addresses.map((address) => (
-                  <TouchableOpacity
-                    key={address.id}
-                    style={[
-                      styles.addressCard,
-                      selectedAddressId === address.id && styles.addressCardSelected,
-                    ]}
-                    onPress={() => setSelectedAddressId(address.id)}
-                  >
-                    <View style={styles.addressCardHeader}>
-                      <View style={styles.addressCardLeft}>
-                        <Ionicons
-                          name={
-                            selectedAddressId === address.id
-                              ? 'radio-button-on'
-                              : 'radio-button-off'
-                          }
-                          size={24}
-                          color={
-                            selectedAddressId === address.id ? COLORS.primary : COLORS.text.light
-                          }
-                        />
-                        <View style={{ flex: 1 }}>
-                          <View style={styles.addressLabelRow}>
-                            <Text style={styles.addressLabel}>{address.label}</Text>
-                            {address.is_default && (
-                              <View style={styles.defaultBadge}>
-                                <Text style={styles.defaultBadgeText}>Default</Text>
-                              </View>
-                            )}
-                          </View>
-                          <Text style={styles.addressText}>{address.street_address}</Text>
-                          <Text style={styles.addressText}>
-                            {address.city}, {address.country}
-                          </Text>
-                        </View>
+                {addresses.map((address) => {
+                  const isSelected = selectedAddressId === address.id;
+                  
+                  return (
+                    <TouchableOpacity
+                      key={address.id}
+                      style={[styles.addressCard, isSelected && styles.addressCardSelected]}
+                      onPress={() => setSelectedAddressId(address.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.addressRadio}>
+                        {isSelected ? (
+                          <LinearGradient
+                            colors={[COLORS.primary, COLORS.secondary]}
+                            style={styles.radioSelected}
+                          >
+                            <Ionicons name="checkmark" size={12} color="#FFF" />
+                          </LinearGradient>
+                        ) : (
+                          <View style={styles.radioUnselected} />
+                        )}
                       </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
 
-            {errors.address && <Text style={styles.errorText}>{errors.address}</Text>}
-          </View>
-        )}
-
-        {/* Step 3: Add-ons */}
-        {currentStep === 'addons' && (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Add extra services (Optional)</Text>
-
-            {addons.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="grid-outline" size={48} color={COLORS.text.light} />
-                <Text style={styles.emptyText}>No add-ons available for this service</Text>
-              </View>
-            ) : (
-              <View style={styles.addonsList}>
-                {addons.map((addon) => (
-                  <TouchableOpacity
-                    key={addon.id}
-                    style={[
-                      styles.addonCard,
-                      selectedAddonIds.includes(addon.id) && styles.addonCardSelected,
-                    ]}
-                    onPress={() => toggleAddon(addon.id)}
-                  >
-                    <View style={styles.addonCardLeft}>
-                      <Ionicons
-                        name={selectedAddonIds.includes(addon.id) ? 'checkbox' : 'square-outline'}
-                        size={24}
-                        color={
-                          selectedAddonIds.includes(addon.id) ? COLORS.primary : COLORS.text.light
-                        }
-                      />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.addonName}>{addon.name}</Text>
-                        {addon.description && <Text style={styles.addonDesc}>{addon.description}</Text>}
+                        <View style={styles.addressLabelRow}>
+                          <Text style={styles.addressLabel}>{address.label}</Text>
+                          {address.is_default && (
+                            <View style={styles.defaultBadge}>
+                              <Text style={styles.defaultBadgeText}>Default</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.addressText}>{address.street_address}</Text>
+                        <Text style={styles.addressText}>
+                          {address.city}, {address.country}
+                        </Text>
                       </View>
-                    </View>
-                    <Text style={styles.addonPrice}>+QAR {Number(addon.price).toFixed(2)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Step 4: Review */}
-        {currentStep === 'review' && (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Review Your Booking</Text>
-
-            {/* Date & Time Summary */}
-            <View style={styles.summarySection}>
-              <Text style={styles.summarySectionTitle}>Date & Time</Text>
-              <View style={styles.summaryRow}>
-                <Ionicons name="calendar-outline" size={20} color={COLORS.text.secondary} />
-                <Text style={styles.summaryText}>
-                  {selectedDate?.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Ionicons name="time-outline" size={20} color={COLORS.text.secondary} />
-                <Text style={styles.summaryText}>
-                  {selectedTimeStr && formatTime(selectedTimeStr)}
-                </Text>
-              </View>
-            </View>
-
-            {/* Address Summary */}
-            {selectedAddressId && (
-              <View style={styles.summarySection}>
-                <Text style={styles.summarySectionTitle}>Service Address</Text>
-                {(() => {
-                  const addr = addresses.find((a) => a.id === selectedAddressId);
-                  if (!addr) return null;
-                  return (
-                    <>
-                      <Text style={styles.summaryText}>{addr.label}</Text>
-                      <Text style={styles.summarySubtext}>{addr.street_address}</Text>
-                      <Text style={styles.summarySubtext}>
-                        {addr.city}, {addr.country}
-                      </Text>
-                    </>
-                  );
-                })()}
-              </View>
-            )}
-
-            {/* Add-ons Summary */}
-            {selectedAddonIds.length > 0 && (
-              <View style={styles.summarySection}>
-                <Text style={styles.summarySectionTitle}>Selected Add-ons</Text>
-                {selectedAddonIds.map((addonId) => {
-                  const addon = addons.find((a) => a.id === addonId);
-                  if (!addon) return null;
-                  return (
-                    <View key={addon.id} style={styles.summaryAddonRow}>
-                      <Text style={styles.summaryText}>{addon.name}</Text>
-                      <Text style={styles.summaryPrice}>+QAR {Number(addon.price).toFixed(2)}</Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
             )}
 
-            {/* Pricing Summary */}
-            <View style={styles.pricingCard}>
-              <View style={styles.pricingRow}>
-                <Text style={styles.pricingLabel}>Service Price</Text>
-                <Text style={styles.pricingValue}>QAR {pricing.servicePrice.toFixed(2)}</Text>
+            {errors.address && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={16} color={COLORS.danger} />
+                <Text style={styles.errorText}>{errors.address}</Text>
               </View>
+            )}
+          </View>
+        )}
+
+        {/* Addons Step */}
+        {currentStep === 'addons' && (
+          <View style={styles.stepContent}>
+            <Text style={styles.questionText}>Add extra services? (Optional)</Text>
+
+            {addons.length === 0 ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIcon}>
+                  <Ionicons name="grid-outline" size={48} color={COLORS.text.light} />
+                </View>
+                <Text style={styles.emptyTitle}>No add-ons available</Text>
+                <Text style={styles.emptySubtitle}>This service doesn't have any additional options</Text>
+              </View>
+            ) : (
+              <View style={styles.addonsList}>
+                {addons.map((addon) => {
+                  const isSelected = selectedAddonIds.includes(addon.id);
+                  
+                  return (
+                    <TouchableOpacity
+                      key={addon.id}
+                      style={[styles.addonCard, isSelected && styles.addonCardSelected]}
+                      onPress={() => toggleAddon(addon.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.addonCheckbox}>
+                        {isSelected ? (
+                          <LinearGradient
+                            colors={[COLORS.primary, COLORS.secondary]}
+                            style={styles.checkboxSelected}
+                          >
+                            <Ionicons name="checkmark" size={14} color="#FFF" />
+                          </LinearGradient>
+                        ) : (
+                          <View style={styles.checkboxUnselected} />
+                        )}
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.addonName}>{addon.name}</Text>
+                        {addon.description && (
+                          <Text style={styles.addonDescription}>{addon.description}</Text>
+                        )}
+                      </View>
+
+                      <Text style={styles.addonPrice}>+{Number(addon.price).toFixed(0)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Review Step */}
+        {currentStep === 'review' && (
+          <View style={styles.stepContent}>
+            <Text style={styles.questionText}>Review your booking</Text>
+
+            {/* Summary Card */}
+            <View style={styles.summaryCard}>
+              <View style={styles.summarySection}>
+                <View style={styles.summaryIconContainer}>
+                  <Ionicons name="calendar" size={16} color={COLORS.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.summaryLabel}>Date & Time</Text>
+                  <Text style={styles.summaryValue}>
+                    {selectedDate?.toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                  <Text style={styles.summaryValue}>
+                    {selectedTimeStr && formatTime(selectedTimeStr)}
+                  </Text>
+                </View>
+              </View>
+
+              {selectedAddressId && (
+                <View style={styles.summarySection}>
+                  <View style={styles.summaryIconContainer}>
+                    <Ionicons name="location" size={16} color="#F59E0B" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.summaryLabel}>Location</Text>
+                    {(() => {
+                      const addr = addresses.find((a) => a.id === selectedAddressId);
+                      if (!addr) return null;
+                      return (
+                        <>
+                          <Text style={styles.summaryValue}>{addr.label}</Text>
+                          <Text style={styles.summarySubtext}>{addr.street_address}</Text>
+                        </>
+                      );
+                    })()}
+                  </View>
+                </View>
+              )}
+
+              {selectedAddonIds.length > 0 && (
+                <View style={styles.summarySection}>
+                  <View style={styles.summaryIconContainer}>
+                    <Ionicons name="add-circle" size={16} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.summaryLabel}>Add-ons ({selectedAddonIds.length})</Text>
+                    {selectedAddonIds.map((addonId) => {
+                      const addon = addons.find((a) => a.id === addonId);
+                      if (!addon) return null;
+                      return (
+                        <Text key={addon.id} style={styles.summaryValue}>
+                          • {addon.name}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Pricing */}
+            <View style={styles.pricingCard}>
+              <Text style={styles.pricingTitle}>Payment Summary</Text>
+              
+              <View style={styles.pricingRow}>
+                <Text style={styles.pricingLabel}>Service</Text>
+                <Text style={styles.pricingValue}>QAR {pricing.servicePrice.toFixed(0)}</Text>
+              </View>
+
               {pricing.addonsPrice > 0 && (
                 <View style={styles.pricingRow}>
                   <Text style={styles.pricingLabel}>Add-ons</Text>
-                  <Text style={styles.pricingValue}>QAR {pricing.addonsPrice.toFixed(2)}</Text>
+                  <Text style={styles.pricingValue}>QAR {pricing.addonsPrice.toFixed(0)}</Text>
                 </View>
               )}
+
               <View style={styles.pricingDivider} />
-              <View style={styles.pricingRow}>
-                <Text style={styles.pricingLabelTotal}>Total</Text>
-                <Text style={styles.pricingValueTotal}>QAR {pricing.subtotal.toFixed(2)}</Text>
+
+              <View style={styles.pricingTotalRow}>
+                <Text style={styles.pricingTotalLabel}>Total</Text>
+                <Text style={styles.pricingTotal}>QAR {pricing.subtotal.toFixed(0)}</Text>
+              </View>
+
+              <View style={styles.paymentMethod}>
+                <Ionicons name="cash" size={18} color="#10B981" />
+                <Text style={styles.paymentMethodText}>Cash on service</Text>
               </View>
             </View>
 
-            {/* Customer Notes */}
+            {/* Notes */}
             <View style={styles.notesSection}>
-              <Text style={styles.notesLabel}>Additional Notes (Optional)</Text>
+              <Text style={styles.notesLabel}>Special instructions (Optional)</Text>
               <TextInput
                 style={styles.notesInput}
-                placeholder="Any special instructions or requirements..."
+                placeholder="Add any special requests or instructions..."
                 placeholderTextColor={COLORS.text.light}
                 value={customerNotes}
                 onChangeText={setCustomerNotes}
                 multiline
-                numberOfLines={4}
+                numberOfLines={3}
                 textAlignVertical="top"
               />
-            </View>
-
-            {/* Payment Method */}
-            <View style={styles.paymentSection}>
-              <Text style={styles.paymentLabel}>Payment Method</Text>
-              <View style={styles.paymentCard}>
-                <Ionicons name="cash-outline" size={24} color={COLORS.success} />
-                <Text style={styles.paymentText}>Cash on Service</Text>
-              </View>
             </View>
           </View>
         )}
       </ScrollView>
 
-      {/* Bottom Actions */}
-      <View style={styles.bottomBar}>
-        {currentStep !== 'datetime' && (
-          <Button
-            title="Back"
-            onPress={goToPreviousStep}
-            variant="outline"
-            style={styles.bottomButton}
-          />
-        )}
-        {currentStep !== 'review' ? (
-          <Button
-            title="Continue"
-            onPress={goToNextStep}
-            variant="primary"
-            style={styles.bottomButton}
-          />
-        ) : (
-          <Button
-            title="Confirm Booking"
-            onPress={handleSubmit}
-            loading={submitting}
-            variant="primary"
-            style={styles.bottomButton}
-          />
-        )}
-      </View>
-    </SafeAreaView>
-  );
-};
+      {/* Fixed Bottom Button */}
+      <SafeAreaView style={styles.bottomSafe}>
+        <View style={styles.bottomContainer}>
+          {currentStep !== 'datetime' && (
+            <TouchableOpacity
+              style={styles.backButton2}
+              onPress={goToPreviousStep}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={20} color={COLORS.text.primary} />
+            </TouchableOpacity>
+          )}
 
-interface StepIndicatorProps {
-  step: number;
-  label: string;
-  active: boolean;
-  completed: boolean;
-}
-
-const StepIndicator: React.FC<StepIndicatorProps> = ({ step, label, active, completed }) => {
-  return (
-    <View style={styles.stepIndicator}>
-      <View
-        style={[
-          styles.stepCircle,
-          active && styles.stepCircleActive,
-          completed && styles.stepCircleCompleted,
-        ]}
-      >
-        {completed ? (
-          <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-        ) : (
-          <Text style={[styles.stepNumber, (active || completed) && styles.stepNumberActive]}>
-            {step}
-          </Text>
-        )}
-      </View>
-      <Text style={[styles.stepLabel, (active || completed) && styles.stepLabelActive]}>
-        {label}
-      </Text>
+          <TouchableOpacity
+            style={[styles.continueButton, currentStep === 'datetime' && { flex: 1 }]}
+            onPress={currentStep === 'review' ? handleSubmit : goToNextStep}
+            disabled={submitting}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={submitting ? ['#9CA3AF', '#6B7280'] : [COLORS.primary, COLORS.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.continueGradient}
+            >
+              {submitting ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFF" />
+                  <Text style={styles.continueText}>Processing...</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.continueText}>
+                    {currentStep === 'review' ? 'Book Now' : 'Continue'}
+                  </Text>
+                  <Ionicons 
+                    name={currentStep === 'review' ? 'checkmark' : 'arrow-forward'} 
+                    size={20} 
+                    color="#FFF" 
+                  />
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     </View>
   );
 };
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background.secondary,
+    backgroundColor: '#FFFFFF',
   },
-  center: {
+
+  // Loading
+  loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
   },
 
   // Header
+  headerSafe: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    backgroundColor: COLORS.background.primary,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    gap: 12,
   },
   backButton: {
     width: 40,
     height: 40,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+  },
+  stepIndicator: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  stepIndicatorText: {
+    fontSize: 13,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
 
-  // Progress
-  progressContainer: {
+  // Step Pills
+  stepPillsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 10,
+  },
+  stepPillWrapper: {
+    marginRight: 10,
+  },
+  stepPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SIZES.padding,
-    paddingVertical: 20,
-    backgroundColor: COLORS.background.primary,
-  },
-  stepIndicator: {
-    alignItems: 'center',
-    gap: 6,
-  },
-  stepCircle: {
-    width: 32,
-    height: 32,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 16,
-    backgroundColor: COLORS.background.tertiary,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
   },
-  stepCircleActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+  stepPillCompleted: {
+    backgroundColor: '#F0FDF4',
   },
-  stepCircleCompleted: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
+  stepPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text.secondary,
   },
-  stepNumber: {
-    fontSize: SIZES.small,
-    fontWeight: 'bold',
-    color: COLORS.text.light,
-  },
-  stepNumberActive: {
+  stepPillTextActive: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
-  stepLabel: {
-    fontSize: 10,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-  },
-  stepLabelActive: {
-    color: COLORS.text.primary,
-    fontWeight: '600',
-  },
-  progressLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: COLORS.border,
-    marginHorizontal: 4,
+  stepPillTextCompleted: {
+    color: COLORS.success,
   },
 
   // Content
   content: {
     flex: 1,
   },
-  serviceCard: {
-    backgroundColor: COLORS.background.primary,
-    padding: SIZES.padding,
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 140 : 120,
   },
-  serviceTitle: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-  },
-  serviceMeta: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-    marginTop: 4,
-  },
-  servicePrice: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    marginTop: 8,
-  },
-
-  // Steps
   stepContent: {
-    padding: SIZES.padding,
+    padding: 20,
   },
-  stepHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  stepTitle: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
+  questionText: {
+    fontSize: 24,
+    fontWeight: '700',
     color: COLORS.text.primary,
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  addButton: {
+  questionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  addNewButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
-  addButtonText: {
-    fontSize: SIZES.small,
-    fontWeight: '600',
+  addNewText: {
+    fontSize: 13,
+    fontWeight: '700',
     color: COLORS.primary,
   },
 
-  // Info Box
+  // Time Slots
+  timeSlotsSection: {
+    marginTop: 24,
+  },
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 12,
+  },
+  loadingSlots: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingSlotsText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+
+  // Info & Error Boxes
   infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.info + '15',
-    padding: 12,
-    borderRadius: SIZES.radius,
-    gap: 8,
-    marginTop: 8,
+    backgroundColor: '#EFF6FF',
+    padding: 14,
+    borderRadius: 12,
+    gap: 10,
+    marginTop: 12,
   },
   infoText: {
     flex: 1,
-    fontSize: SIZES.small,
+    fontSize: 13,
     color: COLORS.info,
+    lineHeight: 18,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: 14,
+    borderRadius: 12,
+    gap: 10,
+    marginTop: 12,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.danger,
+  },
+
+  // Duration
+  durationBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    padding: 14,
+    borderRadius: 12,
+    gap: 10,
+    marginTop: 16,
+  },
+  durationText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  durationValue: {
+    fontWeight: '700',
+    color: COLORS.text.primary,
   },
 
   // Empty State
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 48,
   },
-  emptyText: {
-    fontSize: SIZES.body,
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
     color: COLORS.text.secondary,
-    marginTop: 12,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  emptyButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  emptyButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
   // Address List
@@ -925,233 +1076,286 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   addressCard: {
-    backgroundColor: COLORS.background.primary,
+    flexDirection: 'row',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: SIZES.radius,
     borderWidth: 2,
-    borderColor: COLORS.border,
+    borderColor: 'transparent',
+    gap: 12,
   },
   addressCardSelected: {
     borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary + '08',
+    backgroundColor: '#EFF6FF',
   },
-  addressCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  addressRadio: {
+    paddingTop: 2,
   },
-  addressCardLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 12,
+  radioSelected: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioUnselected: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
   },
   addressLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   addressLabel: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   defaultBadge: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   defaultBadgeText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   addressText: {
-    fontSize: SIZES.small,
+    fontSize: 14,
     color: COLORS.text.secondary,
-    marginTop: 2,
+    lineHeight: 20,
   },
 
-  // Add-ons List
+  // Addons List
   addonsList: {
     gap: 12,
   },
   addonCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: SIZES.radius,
     borderWidth: 2,
-    borderColor: COLORS.border,
+    borderColor: 'transparent',
+    gap: 12,
   },
   addonCardSelected: {
     borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary + '08',
+    backgroundColor: '#EFF6FF',
   },
-  addonCardLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 12,
+  addonCheckbox: {
+    paddingTop: 2,
+  },
+  checkboxSelected: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxUnselected: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
   },
   addonName: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.text.primary,
+    marginBottom: 4,
   },
-  addonDesc: {
-    fontSize: SIZES.small,
+  addonDescription: {
+    fontSize: 13,
     color: COLORS.text.secondary,
-    marginTop: 2,
+    lineHeight: 18,
   },
   addonPrice: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '800',
     color: COLORS.primary,
-    marginLeft: 12,
   },
 
-  // Review Summary
-  summarySection: {
-    backgroundColor: COLORS.background.primary,
+  // Summary
+  summaryCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: SIZES.radius,
-    marginBottom: 12,
+    marginBottom: 16,
+    gap: 16,
   },
-  summarySectionTitle: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-    marginBottom: 12,
-  },
-  summaryRow: {
+  summarySection: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
-    marginBottom: 8,
   },
-  summaryText: {
-    fontSize: SIZES.body,
+  summaryIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.text.secondary,
+    marginBottom: 4,
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: '600',
     color: COLORS.text.primary,
+    lineHeight: 20,
   },
   summarySubtext: {
-    fontSize: SIZES.small,
+    fontSize: 13,
     color: COLORS.text.secondary,
-    marginTop: 4,
-  },
-  summaryAddonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  summaryPrice: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
-    color: COLORS.primary,
+    lineHeight: 18,
   },
 
   // Pricing
   pricingCard: {
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: SIZES.radius,
+    marginBottom: 16,
+  },
+  pricingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
     marginBottom: 12,
   },
   pricingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   pricingLabel: {
-    fontSize: SIZES.body,
+    fontSize: 14,
     color: COLORS.text.secondary,
   },
   pricingValue: {
-    fontSize: SIZES.body,
+    fontSize: 14,
     fontWeight: '600',
     color: COLORS.text.primary,
   },
   pricingDivider: {
     height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 8,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 12,
   },
-  pricingLabelTotal: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
+  pricingTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  pricingTotalLabel: {
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
-  pricingValueTotal: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
+  pricingTotal: {
+    fontSize: 24,
+    fontWeight: '800',
     color: COLORS.primary,
+  },
+  paymentMethod: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    padding: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  paymentMethodText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
   },
 
   // Notes
   notesSection: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   notesLabel: {
-    fontSize: SIZES.small,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     color: COLORS.text.primary,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   notesInput: {
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SIZES.radius,
-    padding: 12,
-    fontSize: SIZES.body,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
     color: COLORS.text.primary,
-    minHeight: 80,
+    minHeight: 90,
+    textAlignVertical: 'top',
   },
 
-  // Payment
-  paymentSection: {
-    marginBottom: 12,
-  },
-  paymentLabel: {
-    fontSize: SIZES.small,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: 8,
-  },
-  paymentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background.primary,
-    padding: 16,
-    borderRadius: SIZES.radius,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 12,
-  },
-  paymentText: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-  },
-
-  // Error
-  errorText: {
-    fontSize: SIZES.small,
-    color: COLORS.danger,
-    marginTop: 8,
-  },
-
-  // Bottom Bar
-  bottomBar: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: SIZES.padding,
-    backgroundColor: COLORS.background.primary,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  bottomButton: {
-    flex: 1,
-  },
+  // Bottom
+bottomSafe: {
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  backgroundColor: '#FFFFFF',
+  borderTopWidth: 1,
+  borderTopColor: '#F3F4F6',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: -4 },
+  shadowOpacity: 0.1,
+  shadowRadius: 8,
+  elevation: 10,
+},
+bottomContainer: {
+  flexDirection: 'row',
+  paddingHorizontal: 16,
+  paddingTop: 16,
+  paddingBottom: Platform.OS === 'ios' ? 60 : 80, // Increased to clear tab bar
+  gap: 12,
+},
+backButton2: {
+  width: 52,
+  height: 52,
+  borderRadius: 16,
+  backgroundColor: '#F3F4F6',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+continueButton: {
+  flex: 1,
+  borderRadius: 16,
+  overflow: 'hidden',
+  shadowColor: COLORS.primary,
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.3,
+  shadowRadius: 8,
+  elevation: 5,
+},
+continueGradient: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 16,
+  gap: 8,
+},
+continueText: {
+  fontSize: 16,
+  fontWeight: '700',
+  color: '#FFFFFF',
+},
 });

@@ -12,10 +12,12 @@ import {
   Alert,
   SafeAreaView,
   Linking,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SIZES } from '../../constants/colors';
 import api from '../../services/api';
 import { HomeStackParamList } from '../../navigation/types';
@@ -171,10 +173,12 @@ export const ProviderDetailsScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading provider details...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading provider details...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -189,86 +193,121 @@ export const ProviderDetailsScreen: React.FC = () => {
   const hasActiveServices = provider.services.length > 0;
   const hasPhone = !!(provider.business?.business_phone || provider.phone);
   const hasEmail = !!(provider.business?.business_email || provider.email);
+  const location = [provider.business?.city, provider.business?.country]
+    .filter(Boolean)
+    .join(', ');
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header with Favorite Button */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Provider Details</Text>
-        <TouchableOpacity
-          onPress={handleToggleFavorite}
-          style={styles.favoriteButton}
-        >
-          <Ionicons
-            name={isProviderFavorite ? 'heart' : 'heart-outline'}
-            size={24}
-            color={isProviderFavorite ? COLORS.danger : COLORS.text.primary}
-          />
-        </TouchableOpacity>
-      </View>
+    <View style={styles.container}>
+      {/* Floating Header */}
+      <SafeAreaView style={styles.headerSafe}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Provider Profile</Text>
+          </View>
+          <TouchableOpacity
+            onPress={handleToggleFavorite}
+            style={styles.headerButton}
+          >
+            <Ionicons
+              name={isProviderFavorite ? 'heart' : 'heart-outline'}
+              size={24}
+              color={isProviderFavorite ? '#EF4444' : COLORS.text.primary}
+            />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Business Info Card */}
-        <View style={styles.businessCard}>
-          <View style={styles.businessHeader}>
-            <View style={styles.businessAvatar}>
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarText}>
-                    {businessName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.businessInfo}>
-              <Text style={styles.businessName} numberOfLines={2}>
-                {businessName}
-              </Text>
-              <View style={styles.ownerInfo}>
-                <Ionicons name="person-outline" size={14} color={COLORS.text.secondary} />
-                <Text style={styles.ownerText}>
-                  {provider.first_name} {provider.last_name}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <LinearGradient
+            colors={['#F9FAFB', '#FFFFFF']}
+            style={styles.profileHeaderGradient}
+          >
+            {avatarUri ? (
+              <Image
+                source={{ uri: avatarUri }}
+                style={styles.profileAvatar}
+              />
+            ) : (
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.secondary]}
+                style={styles.profileAvatarPlaceholder}
+              >
+                <Text style={styles.profileAvatarText}>
+                  {businessName.charAt(0).toUpperCase()}
                 </Text>
+              </LinearGradient>
+            )}
+
+            <Text style={styles.businessName}>{businessName}</Text>
+            
+            <View style={styles.ownerBadge}>
+              <Ionicons name="person" size={12} color={COLORS.primary} />
+              <Text style={styles.ownerText}>
+                {provider.first_name} {provider.last_name}
+              </Text>
+            </View>
+
+            {location && (
+              <View style={styles.locationBadge}>
+                <Ionicons name="location" size={14} color="#F59E0B" />
+                <Text style={styles.locationText}>{location}</Text>
               </View>
-              {provider.business?.country && (
-                <View style={styles.locationInfo}>
-                  <Ionicons name="location-outline" size={14} color={COLORS.text.secondary} />
-                  <Text style={styles.locationText}>{provider.business.country}</Text>
-                </View>
-              )}
+            )}
+          </LinearGradient>
+        </View>
+
+        {/* Description */}
+        {provider.business?.business_description && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="document-text" size={20} color={COLORS.text.primary} />
+              <Text style={styles.sectionTitle}>About</Text>
+            </View>
+            <View style={styles.descriptionCard}>
+              <Text style={styles.description}>
+                {provider.business.business_description}
+              </Text>
             </View>
           </View>
+        )}
 
-          {provider.business?.business_description && (
-            <Text style={styles.businessDescription}>
-              {provider.business.business_description}
-            </Text>
-          )}
-
-          {/* Contact Buttons */}
-          {(hasPhone || hasEmail) && (
+        {/* Contact Actions */}
+        {(hasPhone || hasEmail) && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="call" size={20} color={COLORS.text.primary} />
+              <Text style={styles.sectionTitle}>Get in Touch</Text>
+            </View>
+            
             <View style={styles.contactButtons}>
               {hasPhone && (
                 <TouchableOpacity
                   onPress={handleCallPress}
                   style={styles.contactButton}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                 >
-                  <View style={[styles.contactButtonContent, styles.callButton]}>
-                    <Ionicons name="call-outline" size={20} color="#fff" />
-                    <Text style={styles.contactButtonText}>Call</Text>
-                  </View>
+                  <LinearGradient
+                    colors={['#10B981', '#059669']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.contactButtonGradient}
+                  >
+                    <Ionicons name="call" size={20} color="#FFF" />
+                    <Text style={styles.contactButtonText}>Call Now</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               )}
 
@@ -276,326 +315,436 @@ export const ProviderDetailsScreen: React.FC = () => {
                 <TouchableOpacity
                   onPress={handleEmailPress}
                   style={styles.contactButton}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                 >
-                  <View style={[styles.contactButtonContent, styles.emailButton]}>
-                    <Ionicons name="mail-outline" size={20} color="#fff" />
-                    <Text style={styles.contactButtonText}>Email</Text>
-                  </View>
+                  <LinearGradient
+                    colors={[COLORS.primary, COLORS.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.contactButtonGradient}
+                  >
+                    <Ionicons name="mail" size={20} color="#FFF" />
+                    <Text style={styles.contactButtonText}>Send Email</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               )}
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
-        {/* Services Section */}
-        <View style={styles.servicesSection}>
-          <Text style={styles.sectionTitle}>
-            Services ({provider.services.length})
-          </Text>
+        {/* Services Grid */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="briefcase" size={20} color={COLORS.text.primary} />
+            <Text style={styles.sectionTitle}>
+              Services ({provider.services.length})
+            </Text>
+          </View>
 
           {hasActiveServices ? (
-            provider.services.map((service) => (
-              <TouchableOpacity
-                key={service.id}
-                style={styles.serviceCard}
-                onPress={() => handleServicePress(service.id)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.serviceContent}>
-                  {service.images && service.images.length > 0 ? (
-                    <Image
-                      source={{ uri: service.images[0] }}
-                      style={styles.serviceImage}
-                    />
-                  ) : (
-                    <View style={styles.servicePlaceholder}>
-                      <Ionicons name="briefcase-outline" size={32} color={COLORS.text.light} />
-                    </View>
-                  )}
+            <View style={styles.servicesGrid}>
+              {provider.services.map((service) => (
+                <TouchableOpacity
+                  key={service.id}
+                  style={styles.serviceCard}
+                  onPress={() => handleServicePress(service.id)}
+                  activeOpacity={0.7}
+                >
+                  {/* Service Image */}
+                  <View style={styles.serviceImageContainer}>
+                    {service.images && service.images.length > 0 ? (
+                      <>
+                        <Image
+                          source={{ uri: service.images[0] }}
+                          style={styles.serviceImage}
+                        />
+                        <LinearGradient
+                          colors={['transparent', 'rgba(0,0,0,0.7)']}
+                          style={styles.serviceImageOverlay}
+                        />
+                      </>
+                    ) : (
+                      <LinearGradient
+                        colors={['#F9FAFB', '#F3F4F6']}
+                        style={styles.servicePlaceholder}
+                      >
+                        <Ionicons name="briefcase-outline" size={32} color={COLORS.text.light} />
+                      </LinearGradient>
+                    )}
 
-                  <View style={styles.serviceDetails}>
+                    {/* Price Badge */}
+                    <View style={styles.priceBadge}>
+                      <LinearGradient
+                        colors={[COLORS.primary, COLORS.secondary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.priceBadgeGradient}
+                      >
+                        <Text style={styles.priceText}>
+                          QAR {Number(service.base_price).toFixed(0)}
+                        </Text>
+                      </LinearGradient>
+                    </View>
+                  </View>
+
+                  {/* Service Info */}
+                  <View style={styles.serviceInfo}>
                     <Text style={styles.serviceTitle} numberOfLines={1}>
                       {service.title}
                     </Text>
                     <Text style={styles.serviceDescription} numberOfLines={2}>
                       {service.description}
                     </Text>
-                    <View style={styles.serviceMeta}>
-                      <View style={styles.priceTag}>
-                        <Text style={styles.priceText}>
-                          QAR {Number(service.base_price).toFixed(2)}
-                        </Text>
-                      </View>
-                      {service.duration_minutes && (
-                        <View style={styles.durationTag}>
-                          <Ionicons name="time-outline" size={14} color={COLORS.text.secondary} />
+
+                    {service.duration_minutes && (
+                      <View style={styles.durationContainer}>
+                        <View style={styles.durationBadge}>
+                          <Ionicons name="time" size={12} color={COLORS.primary} />
                           <Text style={styles.durationText}>
                             {service.duration_minutes} min
                           </Text>
                         </View>
-                      )}
-                    </View>
+                      </View>
+                    )}
                   </View>
-
-                  <Ionicons name="chevron-forward" size={20} color={COLORS.text.light} />
-                </View>
-              </TouchableOpacity>
-            ))
+                </TouchableOpacity>
+              ))}
+            </View>
           ) : (
             <View style={styles.emptyState}>
-              <Ionicons name="briefcase-outline" size={64} color={COLORS.text.light} />
-              <Text style={styles.emptyStateText}>No services available</Text>
+              <LinearGradient
+                colors={['#F9FAFB', '#F3F4F6']}
+                style={styles.emptyIconContainer}
+              >
+                <Ionicons name="briefcase-outline" size={48} color={COLORS.text.light} />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>No services available</Text>
+              <Text style={styles.emptySubtitle}>
+                This provider hasn't added any services yet
+              </Text>
             </View>
           )}
         </View>
-
-        {/* Bottom Spacing */}
-        <View style={{ height: 24 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: '#F9FAFB',
   },
+
+  // Loading
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background.primary,
+    justifyContent: 'center',
+    gap: 12,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: SIZES.body,
+    fontSize: 14,
     color: COLORS.text.secondary,
+  },
+
+  // Header
+  headerSafe: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: COLORS.background.primary,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    gap: 12,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+  headerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: SIZES.h4,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
-  headerPlaceholder: {
-    width: 40,
-  },
+
+  // Scroll
   scrollView: {
     flex: 1,
   },
-  businessCard: {
-    backgroundColor: COLORS.background.secondary,
-    margin: SIZES.padding,
-    borderRadius: SIZES.radius,
-    padding: 20,
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+
+  // Profile Header
+  profileHeader: {
+    marginBottom: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginHorizontal: 20,
+    marginTop: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  profileHeaderGradient: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+  },
+  profileAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 16,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    elevation: 4,
   },
-  businessHeader: {
-    flexDirection: 'row',
+  profileAvatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 16,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  businessAvatar: {
-    marginRight: 16,
-  },
-  avatarImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  favoriteButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  businessInfo: {
-    flex: 1,
-    justifyContent: 'center',
+  profileAvatarText: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   businessName: {
-    fontSize: SIZES.h3,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
     color: COLORS.text.primary,
-    marginBottom: 4,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  ownerInfo: {
+  ownerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
+    marginBottom: 8,
   },
   ownerText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
-  locationInfo: {
+  locationBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
   },
   locationText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#F59E0B',
   },
-  businessDescription: {
-    fontSize: SIZES.body,
-    color: COLORS.text.secondary,
-    lineHeight: 22,
+
+  // Section
+  section: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 16,
   },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+
+  // Description
+  descriptionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  description: {
+    fontSize: 15,
+    color: COLORS.text.secondary,
+    lineHeight: 24,
+  },
+
+  // Contact Buttons
   contactButtons: {
     flexDirection: 'row',
     gap: 12,
   },
   contactButton: {
     flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  contactButtonContent: {
+  contactButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: SIZES.radius,
+    paddingVertical: 16,
     gap: 8,
-  },
-  callButton: {
-    backgroundColor: COLORS.primary,
-  },
-  emailButton: {
-    backgroundColor: COLORS.success,
   },
   contactButtonText: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  servicesSection: {
-    paddingHorizontal: SIZES.padding,
-    paddingBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: SIZES.h3,
+    fontSize: 15,
     fontWeight: '700',
-    color: COLORS.text.primary,
-    marginBottom: 16,
+    color: '#FFFFFF',
+  },
+
+  // Services Grid
+  servicesGrid: {
+    gap: 16,
   },
   serviceCard: {
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: SIZES.radius,
-    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 8,
     elevation: 2,
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
-  serviceContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
+  serviceImageContainer: {
+    width: '100%',
+    height: 180,
+    position: 'relative',
   },
   serviceImage: {
-    width: 80,
-    height: 80,
-    borderRadius: SIZES.radius,
+    width: '100%',
+    height: '100%',
+  },
+  serviceImageOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
   },
   servicePlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: SIZES.radius,
-    backgroundColor: COLORS.background.tertiary,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  serviceDetails: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
+  priceBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  serviceTitle: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: 4,
-  },
-  serviceDescription: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  serviceMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  priceTag: {
-    backgroundColor: COLORS.background.tertiary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  priceBadgeGradient: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   priceText: {
-    fontSize: SIZES.small,
-    fontWeight: '600',
-    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  durationTag: {
+  serviceInfo: {
+    padding: 16,
+  },
+  serviceTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 6,
+  },
+  serviceDescription: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  durationContainer: {
+    flexDirection: 'row',
+  },
+  durationBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
     gap: 4,
   },
   durationText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
+
+  // Empty State
   emptyState: {
     alignItems: 'center',
     paddingVertical: 48,
   },
-  emptyStateText: {
-    marginTop: 16,
-    fontSize: SIZES.body,
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
     color: COLORS.text.secondary,
+    textAlign: 'center',
   },
 });

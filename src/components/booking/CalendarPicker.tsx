@@ -5,10 +5,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SIZES } from '../../constants/colors';
+import { LinearGradient } from 'expo-linear-gradient';
+import { COLORS } from '../../constants/colors';
 
 interface CalendarPickerProps {
   selectedDate: Date | null;
@@ -57,14 +57,8 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
 
   const isDateDisabled = (date: Date) => {
     const dateStr = date.toDateString();
-    
-    // Check if before minDate
     if (minDate && date < minDate) return true;
-    
-    // Check if after maxDate
     if (maxDate && date > maxDate) return true;
-    
-    // Check if in disabledDates array
     return disabledDates.some((d) => d.toDateString() === dateStr);
   };
 
@@ -82,12 +76,10 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
     const { daysInMonth, startDayOfWeek } = getDaysInMonth(currentMonth);
     const days: (Date | null)[] = [];
 
-    // Add empty cells for days before the first day of the month
     for (let i = 0; i < startDayOfWeek; i++) {
       days.push(null);
     }
 
-    // Add all days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(
         currentMonth.getFullYear(),
@@ -111,26 +103,36 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
           return (
             <TouchableOpacity
               key={date.toISOString()}
-              style={[
-                styles.dayCell,
-                selected && styles.dayCellSelected,
-                disabled && styles.dayCellDisabled,
-                today && !selected && styles.dayCellToday,
-              ]}
+              style={styles.dayCell}
               onPress={() => !disabled && onDateSelect(date)}
               disabled={disabled}
               activeOpacity={0.7}
             >
-              <Text
-                style={[
-                  styles.dayText,
-                  selected && styles.dayTextSelected,
-                  disabled && styles.dayTextDisabled,
-                  today && !selected && styles.dayTextToday,
-                ]}
-              >
-                {date.getDate()}
-              </Text>
+              {selected ? (
+                <LinearGradient
+                  colors={[COLORS.primary, COLORS.secondary]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.selectedDay}
+                >
+                  <Text style={styles.selectedDayText}>{date.getDate()}</Text>
+                </LinearGradient>
+              ) : (
+                <View style={[
+                  styles.dayContainer,
+                  today && styles.todayContainer,
+                  disabled && styles.disabledContainer,
+                ]}>
+                  <Text style={[
+                    styles.dayText,
+                    today && styles.todayText,
+                    disabled && styles.disabledText,
+                  ]}>
+                    {date.getDate()}
+                  </Text>
+                  {today && !disabled && <View style={styles.todayDot} />}
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -138,7 +140,6 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
     );
   };
 
-  // Check if we can go to previous month
   const canGoPrevious = useMemo(() => {
     if (!minDate) return true;
     const firstOfCurrentMonth = new Date(
@@ -157,6 +158,7 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
           onPress={goToPreviousMonth}
           disabled={!canGoPrevious}
           style={styles.navButton}
+          activeOpacity={0.7}
         >
           <Ionicons
             name="chevron-back"
@@ -164,16 +166,22 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
             color={canGoPrevious ? COLORS.text.primary : COLORS.text.light}
           />
         </TouchableOpacity>
+        
         <Text style={styles.monthText}>{monthName}</Text>
-        <TouchableOpacity onPress={goToNextMonth} style={styles.navButton}>
+        
+        <TouchableOpacity 
+          onPress={goToNextMonth} 
+          style={styles.navButton}
+          activeOpacity={0.7}
+        >
           <Ionicons name="chevron-forward" size={24} color={COLORS.text.primary} />
         </TouchableOpacity>
       </View>
 
       {/* Weekday Headers */}
       <View style={styles.weekdayRow}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-          <View key={day} style={styles.weekdayCell}>
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+          <View key={`${day}-${index}`} style={styles.weekdayCell}>
             <Text style={styles.weekdayText}>{day}</Text>
           </View>
         ))}
@@ -187,32 +195,37 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.background.primary,
-    borderRadius: SIZES.radius,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   navButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
   },
   monthText: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   weekdayRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   weekdayCell: {
     flex: 1,
@@ -220,7 +233,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   weekdayText: {
-    fontSize: SIZES.small,
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.text.secondary,
   },
@@ -231,35 +244,53 @@ const styles = StyleSheet.create({
   dayCell: {
     width: `${100 / 7}%`,
     aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 4,
   },
-  dayCellSelected: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
+  dayContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
   },
-  dayCellDisabled: {
+  todayContainer: {
+    backgroundColor: '#EFF6FF',
+  },
+  disabledContainer: {
     opacity: 0.3,
   },
-  dayCellToday: {
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderRadius: 8,
+  selectedDay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   dayText: {
-    fontSize: SIZES.body,
+    fontSize: 15,
+    fontWeight: '600',
     color: COLORS.text.primary,
   },
-  dayTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
+  todayText: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
-  dayTextDisabled: {
+  disabledText: {
     color: COLORS.text.light,
   },
-  dayTextToday: {
-    color: COLORS.primary,
-    fontWeight: 'bold',
+  selectedDayText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  todayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.primary,
+    marginTop: 2,
   },
 });

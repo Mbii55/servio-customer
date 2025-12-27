@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { COLORS, SIZES } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
@@ -23,8 +24,8 @@ type Params = { bookingId: string };
 
 const formatMoney = (value: any) => {
   const n = Number(value ?? 0);
-  if (Number.isFinite(n)) return `QAR ${n.toFixed(2)}`;
-  return `QAR ${value ?? ''}`;
+  if (Number.isFinite(n)) return `${n.toFixed(0)}`;
+  return `${value ?? ''}`;
 };
 
 const humanStatus = (s: string) => {
@@ -32,19 +33,40 @@ const humanStatus = (s: string) => {
   return x ? x.charAt(0).toUpperCase() + x.slice(1) : 'Unknown';
 };
 
-const badgeFor = (status: BookingStatus) => {
+const statusConfig = (status: BookingStatus) => {
   switch (status) {
     case 'completed':
-      return { bg: COLORS.success + '22', fg: COLORS.success, icon: 'checkmark-circle-outline' as const };
+      return {
+        colors: ['#10B981', '#059669'] as const,
+        icon: 'checkmark-circle' as const,
+        label: 'Completed',
+      };
     case 'cancelled':
     case 'rejected':
-      return { bg: COLORS.danger + '22', fg: COLORS.danger, icon: 'close-circle-outline' as const };
-    case 'accepted':
+      return {
+        colors: ['#EF4444', '#DC2626'] as const,
+        icon: 'close-circle' as const,
+        label: status === 'cancelled' ? 'Cancelled' : 'Rejected',
+      };
     case 'in_progress':
-      return { bg: COLORS.info + '22', fg: COLORS.info, icon: 'sync-outline' as const };
+      return {
+        colors: ['#8B5CF6', '#7C3AED'] as const,
+        icon: 'play-circle' as const,
+        label: 'In Progress',
+      };
+    case 'accepted':
+      return {
+        colors: [COLORS.primary, COLORS.secondary] as const,
+        icon: 'checkmark-done' as const,
+        label: 'Accepted',
+      };
     case 'pending':
     default:
-      return { bg: COLORS.warning + '22', fg: COLORS.warning, icon: 'time-outline' as const };
+      return {
+        colors: ['#F59E0B', '#D97706'] as const,
+        icon: 'time' as const,
+        label: 'Pending',
+      };
   }
 };
 
@@ -58,7 +80,7 @@ export const BookingDetailsScreen: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [booking, setBooking] = useState<any | null>(null); // keep flexible (backend may add extra fields)
+  const [booking, setBooking] = useState<any | null>(null);
 
   const load = async () => {
     setErr(null);
@@ -81,47 +103,27 @@ export const BookingDetailsScreen: React.FC = () => {
       return;
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, bookingId]);
 
   const status: BookingStatus = (booking?.status as BookingStatus) || 'pending';
-  const badge = badgeFor(status);
+  const config = statusConfig(status);
 
-  const scheduledText = useMemo(() => {
-    const d = booking?.scheduled_date;
-    const t = booking?.scheduled_time;
-    if (!d && !t) return '';
-    return `${d ?? ''} • ${t ?? ''}`.trim();
-  }, [booking?.scheduled_date, booking?.scheduled_time]);
+  const serviceTitle = booking?.service_title || booking?.service?.title || 'Service';
+  const providerName = booking?.provider_business_name || booking?.provider?.business_name || 'Provider';
+  const providerLogo = booking?.provider_business_logo || booking?.provider?.business_logo || null;
 
-  // these fields exist only if backend returns enriched booking
-  const serviceTitle =
-    booking?.service_title ||
-    booking?.service?.title ||
-    'Service';
-
-  const providerName =
-    booking?.provider_business_name ||
-    booking?.provider?.business_name ||
-    'Provider';
-
-  const providerLogo =
-    booking?.provider_business_logo ||
-    booking?.provider?.business_logo ||
-    null;
-
-  const canCancel =
-    (user?.role === 'customer' || user?.role === 'admin') &&
-    (status === 'pending' || status === 'accepted' || status === 'in_progress');
+const canCancel =
+  (user?.role === 'customer' || user?.role === 'admin') &&
+  (status === 'pending' || status === 'accepted');
 
   const onCancel = () => {
     Alert.alert(
-      'Cancel booking?',
+      'Cancel Booking',
       'Are you sure you want to cancel this booking?',
       [
         { text: 'No', style: 'cancel' },
         {
-          text: 'Yes, cancel',
+          text: 'Yes, Cancel',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -145,11 +147,10 @@ export const BookingDetailsScreen: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.center}>
+        <View style={styles.loadingContainer}>
           <ActivityIndicator color={COLORS.primary} />
-          <Text style={styles.centerText}>Sign in to view booking details</Text>
+          <Text style={styles.loadingText}>Sign in to view booking details</Text>
         </View>
-
         <AuthModal
           visible={showAuthModal}
           onClose={() => {
@@ -165,8 +166,9 @@ export const BookingDetailsScreen: React.FC = () => {
   if (loading && !booking) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.center}>
-          <ActivityIndicator color={COLORS.primary} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading booking details...</Text>
         </View>
       </SafeAreaView>
     );
@@ -175,14 +177,24 @@ export const BookingDetailsScreen: React.FC = () => {
   if (err || !booking) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.center}>
-          <Ionicons name="alert-circle-outline" size={44} color={COLORS.danger} />
-          <Text style={[styles.centerText, { color: COLORS.danger }]}>
-            {err ?? 'Booking not found'}
-          </Text>
-
-          <TouchableOpacity style={styles.primaryBtn} onPress={load} activeOpacity={0.85}>
-            <Text style={styles.primaryBtnText}>Try Again</Text>
+        <View style={styles.errorContainer}>
+          <LinearGradient
+            colors={['#FEF2F2', '#FEE2E2'] as const}
+            style={styles.errorIconContainer}
+          >
+            <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
+          </LinearGradient>
+          <Text style={styles.errorTitle}>{err ?? 'Booking not found'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={load}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary] as const}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.retryButtonGradient}
+            >
+              <Ionicons name="refresh" size={18} color="#FFF" />
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -193,241 +205,562 @@ export const BookingDetailsScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.85}>
-          <Ionicons name="chevron-back" size={22} color={COLORS.text.primary} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
         </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Booking Details</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Booking Details</Text>
+          <Text style={styles.headerSubtitle}>#{booking.booking_number || booking.id}</Text>
+        </View>
       </View>
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: SIZES.padding, paddingBottom: 30 }}
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Summary */}
-        <View style={styles.card}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.kicker}>Booking</Text>
-            <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-              <Ionicons name={badge.icon} size={14} color={badge.fg} />
-              <Text style={[styles.badgeText, { color: badge.fg }]}>
-                {humanStatus(status)}
-              </Text>
+        {/* Status Banner */}
+        <View style={styles.statusBanner}>
+          <LinearGradient
+            colors={config.colors as any}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.statusGradient}
+          >
+            <Ionicons name={config.icon} size={32} color="#FFF" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statusLabel}>Status</Text>
+              <Text style={styles.statusText}>{config.label}</Text>
             </View>
-          </View>
-
-          <Text style={styles.big}>
-            {booking.booking_number ? `#${booking.booking_number}` : booking.id}
-          </Text>
-
-          {!!scheduledText && (
-            <View style={[styles.row, { marginTop: 10 }]}>
-              <Ionicons name="calendar-outline" size={16} color={COLORS.text.secondary} />
-              <Text style={styles.value}>{scheduledText}</Text>
-            </View>
-          )}
+          </LinearGradient>
         </View>
 
-        {/* Service */}
+        {/* Service Card */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Service</Text>
-          <Text style={styles.big2} numberOfLines={2}>{serviceTitle}</Text>
-
-          <View style={[styles.row, { marginTop: 10 }]}>
-            <Ionicons name="cash-outline" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.value}>Total: {formatMoney(booking.subtotal)}</Text>
+          <View style={styles.cardHeader}>
+            <Ionicons name="briefcase" size={20} color={COLORS.primary} />
+            <Text style={styles.cardHeaderText}>Service Details</Text>
           </View>
 
-          <View style={[styles.row, { marginTop: 8 }]}>
-            <Ionicons name="wallet-outline" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.value}>
-              Payment: {(booking.payment_method || 'cash').toUpperCase()} • {humanStatus(booking.payment_status || 'pending')}
-            </Text>
+          <Text style={styles.serviceTitle}>{serviceTitle}</Text>
+
+          <View style={styles.infoRow}>
+            <View style={styles.infoIconContainer}>
+              <Ionicons name="calendar" size={14} color={COLORS.primary} />
+            </View>
+            <Text style={styles.infoText}>{booking.scheduled_date}</Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <View style={styles.infoIconContainer}>
+              <Ionicons name="time" size={14} color={COLORS.primary} />
+            </View>
+            <Text style={styles.infoText}>{booking.scheduled_time}</Text>
           </View>
         </View>
 
-        {/* Provider */}
+        {/* Provider Card */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Provider</Text>
+          <View style={styles.cardHeader}>
+            <Ionicons name="storefront" size={20} color="#F59E0B" />
+            <Text style={styles.cardHeaderText}>Provider</Text>
+          </View>
 
-          <View style={[styles.row, { marginTop: 10 }]}>
+          <View style={styles.providerContainer}>
             {providerLogo ? (
-              <Image source={{ uri: providerLogo }} style={styles.providerLogo} />
+              <Image source={{ uri: providerLogo }} style={styles.providerAvatar} />
             ) : (
-              <View style={styles.providerLogoFallback}>
-                <Ionicons name="storefront-outline" size={18} color={COLORS.text.light} />
-              </View>
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.secondary] as const}
+                style={styles.providerAvatarPlaceholder}
+              >
+                <Text style={styles.providerAvatarText}>
+                  {providerName.charAt(0).toUpperCase()}
+                </Text>
+              </LinearGradient>
             )}
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.big2} numberOfLines={1}>{providerName}</Text>
-              <Text style={styles.muted} numberOfLines={1}>
-                Provider ID: {booking.provider_id}
-              </Text>
+              <Text style={styles.providerName}>{providerName}</Text>
+              <Text style={styles.providerMeta}>Provider ID: {booking.provider_id}</Text>
             </View>
           </View>
         </View>
 
-        {/* Breakdown */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Price Breakdown</Text>
+        {/* Address Card */}
+        {booking.address && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="location" size={20} color="#10B981" />
+              <Text style={styles.cardHeaderText}>Service Location</Text>
+            </View>
 
-          <View style={styles.rowBetweenLine}>
-            <Text style={styles.muted}>Service</Text>
-            <Text style={styles.valueStrong}>{formatMoney(booking.service_price)}</Text>
+            <View style={styles.addressContainer}>
+              <Text style={styles.addressLabel}>{booking.address.label || 'Address'}</Text>
+              <Text style={styles.addressText}>{booking.address.street_address}</Text>
+              <Text style={styles.addressText}>
+                {booking.address.city}, {booking.address.country}
+              </Text>
+            </View>
           </View>
+        )}
 
-          <View style={styles.rowBetweenLine}>
-            <Text style={styles.muted}>Add-ons</Text>
-            <Text style={styles.valueStrong}>{formatMoney(booking.addons_price)}</Text>
-          </View>
+        {/* Pricing Card */}
+        <View style={styles.pricingCard}>
+          <LinearGradient
+            colors={['#F9FAFB', '#FFFFFF'] as const}
+            style={styles.pricingGradient}
+          >
+            <View style={styles.cardHeader}>
+              <Ionicons name="cash" size={20} color={COLORS.primary} />
+              <Text style={styles.cardHeaderText}>Payment Details</Text>
+            </View>
 
-          <View style={styles.divider} />
+            <View style={styles.pricingRow}>
+              <Text style={styles.pricingLabel}>Service Price</Text>
+              <Text style={styles.pricingValue}>QAR {formatMoney(booking.service_price)}</Text>
+            </View>
 
-          <View style={styles.rowBetweenLine}>
-            <Text style={styles.valueStrong}>Total</Text>
-            <Text style={styles.valueStrong}>{formatMoney(booking.subtotal)}</Text>
-          </View>
+            <View style={styles.pricingRow}>
+              <Text style={styles.pricingLabel}>Add-ons</Text>
+              <Text style={styles.pricingValue}>QAR {formatMoney(booking.addons_price)}</Text>
+            </View>
+
+            <View style={styles.pricingDivider} />
+
+            <View style={styles.pricingTotalRow}>
+              <Text style={styles.pricingTotalLabel}>Total Amount</Text>
+              <Text style={styles.pricingTotal}>QAR {formatMoney(booking.subtotal)}</Text>
+            </View>
+
+            <View style={styles.paymentMethodContainer}>
+              <View style={styles.paymentMethod}>
+                <Ionicons name="cash-outline" size={16} color="#10B981" />
+                <Text style={styles.paymentMethodText}>
+                  {(booking.payment_method || 'cash').toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.paymentStatus}>
+                <View style={[styles.paymentStatusDot, { backgroundColor: booking.payment_status === 'paid' ? '#10B981' : '#F59E0B' }]} />
+                <Text style={styles.paymentStatusText}>
+                  {humanStatus(booking.payment_status || 'pending')}
+                </Text>
+              </View>
+            </View>
+          </LinearGradient>
         </View>
 
-        {/* Notes */}
-        {(booking.customer_notes || booking.provider_notes || booking.cancellation_reason) ? (
+        {/* Notes Card */}
+        {(booking.customer_notes || booking.provider_notes || booking.cancellation_reason) && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Notes</Text>
+            <View style={styles.cardHeader}>
+              <Ionicons name="document-text" size={20} color="#8B5CF6" />
+              <Text style={styles.cardHeaderText}>Notes</Text>
+            </View>
 
-            {booking.customer_notes ? (
-              <View style={{ marginTop: 10 }}>
-                <Text style={styles.kicker}>Customer</Text>
-                <Text style={styles.note}>{booking.customer_notes}</Text>
+            {booking.customer_notes && (
+              <View style={styles.noteContainer}>
+                <Text style={styles.noteLabel}>Customer Notes</Text>
+                <Text style={styles.noteText}>{booking.customer_notes}</Text>
               </View>
-            ) : null}
+            )}
 
-            {booking.provider_notes ? (
-              <View style={{ marginTop: 10 }}>
-                <Text style={styles.kicker}>Provider</Text>
-                <Text style={styles.note}>{booking.provider_notes}</Text>
+            {booking.provider_notes && (
+              <View style={styles.noteContainer}>
+                <Text style={styles.noteLabel}>Provider Notes</Text>
+                <Text style={styles.noteText}>{booking.provider_notes}</Text>
               </View>
-            ) : null}
+            )}
 
-            {booking.cancellation_reason ? (
-              <View style={{ marginTop: 10 }}>
-                <Text style={styles.kicker}>Cancellation reason</Text>
-                <Text style={styles.note}>{booking.cancellation_reason}</Text>
+            {booking.cancellation_reason && (
+              <View style={[styles.noteContainer, styles.cancellationNote]}>
+                <View style={styles.cancellationHeader}>
+                  <Ionicons name="alert-circle" size={16} color={COLORS.danger} />
+                  <Text style={styles.cancellationLabel}>Cancellation Reason</Text>
+                </View>
+                <Text style={styles.noteText}>{booking.cancellation_reason}</Text>
               </View>
-            ) : null}
+            )}
           </View>
-        ) : null}
+        )}
 
         {/* Actions */}
-        {canCancel ? (
-          <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85}>
-            <Text style={styles.dangerBtnText}>Cancel Booking</Text>
+        {canCancel && (
+          <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+            <View style={styles.cancelButtonContent}>
+              <Ionicons name="close-circle-outline" size={20} color={COLORS.danger} />
+              <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+            </View>
           </TouchableOpacity>
-        ) : null}
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background.primary },
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
 
-  header: {
-    paddingHorizontal: SIZES.padding,
-    paddingTop: 10,
-    paddingBottom: 10,
+  // Loading & Error
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  errorIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.danger,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  retryButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    gap: 8,
   },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: COLORS.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  headerTitle: { fontSize: SIZES.h4, fontWeight: '800', color: COLORS.text.primary },
 
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+  },
+
+  // Content
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 120,
+  },
+
+  // Status Banner
+  statusBanner: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  statusGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 16,
+  },
+  statusLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 4,
+  },
+  statusText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // Card
   card: {
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: SIZES.radius,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  cardHeaderText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+
+  // Service
+  serviceTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
     marginBottom: 12,
   },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  infoIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoText: {
+    fontSize: 14,
+    color: COLORS.text.primary,
+    fontWeight: '600',
+  },
 
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  // Provider
+  providerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  providerAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  providerAvatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerAvatarText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  providerName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  providerMeta: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+  },
 
-  kicker: { fontSize: SIZES.tiny, color: COLORS.text.secondary, fontWeight: '700' },
-  big: { marginTop: 8, fontSize: SIZES.h3, fontWeight: '900', color: COLORS.text.primary },
-  big2: { fontSize: SIZES.body, fontWeight: '800', color: COLORS.text.primary },
-  muted: { marginTop: 2, fontSize: SIZES.small, color: COLORS.text.secondary },
+  // Address
+  addressContainer: {
+    gap: 4,
+  },
+  addressLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  addressText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    lineHeight: 20,
+  },
 
-  value: { color: COLORS.text.secondary, fontSize: SIZES.body },
-  valueStrong: { color: COLORS.text.primary, fontSize: SIZES.body, fontWeight: '800' },
-
-  sectionTitle: { fontSize: SIZES.h4, fontWeight: '900', color: COLORS.text.primary },
-
-  badge: {
+  // Pricing
+  pricingCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  pricingGradient: {
+    padding: 16,
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  pricingLabel: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  pricingValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  pricingDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 12,
+  },
+  pricingTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pricingTotalLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  pricingTotal: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  paymentMethodContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  paymentMethod: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: 10,
   },
-  badgeText: { fontSize: SIZES.tiny, fontWeight: '800' },
-
-  rowBetweenLine: {
-    marginTop: 10,
+  paymentMethodText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  paymentStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
   },
-  divider: { height: 1, backgroundColor: COLORS.border, marginTop: 12 },
-
-  note: { marginTop: 6, fontSize: SIZES.body, color: COLORS.text.secondary, lineHeight: 22 },
-
-  providerLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.background.tertiary,
+  paymentStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  providerLogoFallback: {
-    width: 40,
-    height: 40,
+  paymentStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text.secondary,
+  },
+
+  // Notes
+  noteContainer: {
+    marginBottom: 12,
+  },
+  noteLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 6,
+  },
+  noteText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    lineHeight: 20,
+  },
+  cancellationNote: {
+    backgroundColor: '#FEF2F2',
+    padding: 12,
     borderRadius: 12,
-    backgroundColor: COLORS.background.tertiary,
+    marginTop: 8,
+  },
+  cancellationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  cancellationLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.danger,
+  },
+
+  // Cancel Button
+  cancelButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: COLORS.danger,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  cancelButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 8,
   },
-
-  primaryBtn: {
-    marginTop: 10,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: SIZES.radius,
-    alignItems: 'center',
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.danger,
   },
-  primaryBtnText: { color: '#fff', fontSize: SIZES.body, fontWeight: '800' },
-
-  dangerBtn: {
-    backgroundColor: COLORS.danger,
-    paddingVertical: 14,
-    borderRadius: SIZES.radius,
-    alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  dangerBtnText: { color: '#fff', fontSize: SIZES.body, fontWeight: '800' },
-
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 18, gap: 10 },
-  centerText: { color: COLORS.text.secondary, textAlign: 'center' },
 });

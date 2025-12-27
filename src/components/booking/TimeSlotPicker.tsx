@@ -8,15 +8,16 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SIZES } from '../../constants/colors';
+import { LinearGradient } from 'expo-linear-gradient';
+import { COLORS } from '../../constants/colors';
 
 interface TimeSlot {
-  time: string; // "09:00", "09:30", etc.
+  time: string;
   available: boolean;
 }
 
 interface TimeSlotPickerProps {
-  selectedTime: string | null; // "09:00"
+  selectedTime: string | null;
   onTimeSelect: (time: string) => void;
   timeSlots?: TimeSlot[];
 }
@@ -26,12 +27,10 @@ export const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({
   onTimeSelect,
   timeSlots = [],
 }) => {
-  // ✅ Just use what's passed, no fallback generation
   const slots = React.useMemo(() => {
     return timeSlots;
   }, [timeSlots]);
 
-  // Group slots by time of day
   const groupedSlots = React.useMemo(() => {
     const morning: TimeSlot[] = [];
     const afternoon: TimeSlot[] = [];
@@ -59,12 +58,18 @@ export const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({
     return `${hour12}:${minute} ${period}`;
   };
 
-  const renderTimeSlots = (slots: TimeSlot[], title: string) => {
+  const renderTimeSlots = (slots: TimeSlot[], title: string, icon: string) => {
     if (slots.length === 0) return null;
 
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionIconContainer}>
+            <Ionicons name={icon as any} size={16} color={COLORS.primary} />
+          </View>
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+        
         <View style={styles.slotsGrid}>
           {slots.map((slot) => {
             const isSelected = selectedTime === slot.time;
@@ -73,24 +78,36 @@ export const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({
             return (
               <TouchableOpacity
                 key={slot.time}
-                style={[
-                  styles.timeSlot,
-                  isSelected && styles.timeSlotSelected,
-                  isDisabled && styles.timeSlotDisabled,
-                ]}
+                style={styles.timeSlotWrapper}
                 onPress={() => !isDisabled && onTimeSelect(slot.time)}
                 disabled={isDisabled}
                 activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    styles.timeText,
-                    isSelected && styles.timeTextSelected,
-                    isDisabled && styles.timeTextDisabled,
-                  ]}
-                >
-                  {formatTime(slot.time)}
-                </Text>
+                {isSelected ? (
+                  <LinearGradient
+                    colors={[COLORS.primary, COLORS.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.timeSlotSelected}
+                  >
+                    <Ionicons name="checkmark-circle" size={16} color="#FFF" />
+                    <Text style={styles.timeTextSelected}>
+                      {formatTime(slot.time)}
+                    </Text>
+                  </LinearGradient>
+                ) : (
+                  <View style={[
+                    styles.timeSlot,
+                    isDisabled && styles.timeSlotDisabled,
+                  ]}>
+                    <Text style={[
+                      styles.timeText,
+                      isDisabled && styles.timeTextDisabled,
+                    ]}>
+                      {formatTime(slot.time)}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}
@@ -99,96 +116,128 @@ export const TimeSlotPicker: React.FC<TimeSlotPickerProps> = ({
     );
   };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Select Time</Text>
-      {slots.length === 0 ? (
-        <View style={styles.emptyState}>
+  if (slots.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <LinearGradient
+          colors={['#F9FAFB', '#F3F4F6']}
+          style={styles.emptyIconContainer}
+        >
           <Ionicons name="time-outline" size={48} color={COLORS.text.light} />
-          <Text style={styles.emptyText}>No available time slots</Text>
-          <Text style={styles.emptySubtext}>
-            The provider is not available on this date
-          </Text>
-        </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {renderTimeSlots(groupedSlots.morning, 'Morning')}
-          {renderTimeSlots(groupedSlots.afternoon, 'Afternoon')}
-          {renderTimeSlots(groupedSlots.evening, 'Evening')}
-        </ScrollView>
-      )}
-    </View>
+        </LinearGradient>
+        <Text style={styles.emptyTitle}>No available slots</Text>
+        <Text style={styles.emptySubtitle}>
+          The provider is not available on this date
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      {renderTimeSlots(groupedSlots.morning, 'Morning', 'sunny')}
+      {renderTimeSlots(groupedSlots.afternoon, 'Afternoon', 'partly-sunny')}
+      {renderTimeSlots(groupedSlots.evening, 'Evening', 'moon')}
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 16,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text.primary,
-    marginBottom: 16,
+    maxHeight: 400,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  sectionIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text.secondary,
-    marginBottom: 12,
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text.primary,
   },
   slotsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
+  timeSlotWrapper: {
+    width: '31%',
+  },
   timeSlot: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: COLORS.background.secondary,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    minWidth: 100,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
   },
   timeSlotSelected: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   timeSlotDisabled: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#e0e0e0',
-    opacity: 0.5,
+    backgroundColor: '#F9FAFB',
+    opacity: 0.4,
   },
   timeText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   timeTextSelected: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   timeTextDisabled: {
     color: COLORS.text.light,
   },
-  emptyState: {
-    padding: 32,
+
+  // Empty State
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 16,
   },
-  emptyText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
     color: COLORS.text.primary,
-    textAlign: 'center',
+    marginBottom: 8,
   },
-  emptySubtext: {
-    marginTop: 6,
+  emptySubtitle: {
     fontSize: 14,
     color: COLORS.text.secondary,
     textAlign: 'center',

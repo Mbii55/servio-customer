@@ -10,6 +10,7 @@ import {
   ImageStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SIZES } from '../../constants/colors';
 import { Service } from '../../types';
 
@@ -23,6 +24,9 @@ type Props = {
   showLocation?: boolean;
 };
 
+// ============================================
+// MAIN SERVICE CARD (Full Width)
+// ============================================
 export const ServiceCard: React.FC<Props> = ({
   service,
   onPress,
@@ -41,8 +45,8 @@ export const ServiceCard: React.FC<Props> = ({
 
   const priceText = useMemo(() => {
     const n = Number(service.base_price);
-    if (Number.isFinite(n)) return `QAR ${n.toFixed(2)}`;
-    return `QAR ${service.base_price}`;
+    if (Number.isFinite(n)) return `${n.toFixed(0)}`;
+    return `${service.base_price}`;
   }, [service.base_price]);
 
   const providerName = useMemo(() => {
@@ -51,12 +55,10 @@ export const ServiceCard: React.FC<Props> = ({
     const s: any = service as any;
     const bp = s?.provider?.business_profile;
 
-    // Priority 1: business_name from business_profile
     if (bp?.business_name) {
       return bp.business_name;
     }
 
-    // Priority 2: Combine first_name and last_name
     const fn = s?.provider?.first_name ?? '';
     const ln = s?.provider?.last_name ?? '';
     const full = `${fn} ${ln}`.trim();
@@ -66,83 +68,196 @@ export const ServiceCard: React.FC<Props> = ({
   const durationText = service.duration_minutes ? `${service.duration_minutes} min` : 'Flexible';
 
   return (
-    <TouchableOpacity style={[styles.card, style]} onPress={onPress} activeOpacity={0.88}>
-      {/* Image + overlays */}
-      <View style={styles.imageWrap}>
+    <TouchableOpacity 
+      style={[styles.card, style]} 
+      onPress={onPress} 
+      activeOpacity={0.85}
+    >
+      {/* Image Container */}
+      <View style={styles.imageContainer}>
         {primaryImage && !imgFailed ? (
-          <Image
-            source={{ uri: primaryImage }}
-            style={styles.image as ImageStyle}
-            resizeMode="cover"
-            onError={() => setImgFailed(true)}
-          />
+          <>
+            <Image
+              source={{ uri: primaryImage }}
+              style={styles.image as ImageStyle}
+              resizeMode="cover"
+              onError={() => setImgFailed(true)}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.7)']}
+              style={styles.imageGradient}
+            />
+          </>
         ) : (
-          <View style={styles.imageFallback}>
-            <Ionicons name="image-outline" size={30} color={COLORS.text.light} />
-            <Text style={styles.fallbackText}>No image</Text>
+          <LinearGradient
+            colors={['#EFF6FF', '#DBEAFE']}
+            style={styles.imageFallback}
+          >
+            <Ionicons name="image-outline" size={36} color={COLORS.primary} />
+          </LinearGradient>
+        )}
+
+        {/* Price Badge */}
+        <View style={styles.priceBadge}>
+          <LinearGradient
+            colors={[COLORS.primary, COLORS.secondary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.priceGradient}
+          >
+            <Text style={styles.priceAmount}>QAR {priceText}</Text>
+          </LinearGradient>
+        </View>
+
+        {/* Category Badge */}
+        {showCategory && categoryName && (
+          <View style={styles.categoryBadge}>
+            <View style={styles.categoryBadgeContent}>
+              <Ionicons name="pricetag" size={10} color={COLORS.primary} />
+              <Text style={styles.categoryBadgeText} numberOfLines={1}>
+                {categoryName}
+              </Text>
+            </View>
           </View>
         )}
 
-        {/* Price pill */}
-        <View style={styles.pricePill}>
-          <Ionicons name="cash-outline" size={14} color="#fff" />
-          <Text style={styles.pricePillText} numberOfLines={1}>
-            {priceText}
-          </Text>
-        </View>
-
-        {/* Duration pill */}
+        {/* Duration Badge */}
         {service.duration_minutes && (
-          <View style={styles.durationPill}>
-            <Ionicons name="time-outline" size={14} color={COLORS.text.primary} />
-            <Text style={styles.durationPillText} numberOfLines={1}>
-              {durationText}
-            </Text>
+          <View style={styles.durationBadge}>
+            <View style={styles.durationBadgeContent}>
+              <Ionicons name="time" size={12} color={COLORS.text.secondary} />
+              <Text style={styles.durationText}>{durationText}</Text>
+            </View>
           </View>
         )}
       </View>
 
       {/* Content */}
-      <View style={styles.body}>
-        {/* Title and Category */}
-        <View style={styles.titleRow}>
-          <Text numberOfLines={1} style={styles.title}>
-            {service.title}
-          </Text>
-          {showCategory && categoryName && (
-            <View style={styles.categoryPill}>
-              <Ionicons name="pricetag-outline" size={10} color={COLORS.text.secondary} />
-              <Text style={styles.categoryText} numberOfLines={1}>
-                {categoryName}
-              </Text>
-            </View>
-          )}
-        </View>
+      <View style={styles.content}>
+        {/* Title */}
+        <Text numberOfLines={2} style={styles.title}>
+          {service.title}
+        </Text>
 
-        {/* Provider Info - Business Name */}
+        {/* Provider Info */}
         {showProviderInfo && providerName && (
-          <View style={styles.providerRow}>
-            <Ionicons name="storefront-outline" size={14} color={COLORS.text.secondary} />
-            <Text numberOfLines={1} style={styles.providerText}>
+          <View style={styles.providerContainer}>
+            <View style={styles.providerBadge}>
+              <Ionicons name="storefront" size={10} color={COLORS.primary} />
+            </View>
+            <Text numberOfLines={1} style={styles.providerName}>
               {providerName}
             </Text>
           </View>
         )}
 
         {/* Description */}
-        <Text numberOfLines={2} style={styles.desc}>
-          {service.description || 'No description provided.'}
+        {service.description && (
+          <Text numberOfLines={2} style={styles.description}>
+            {service.description}
+          </Text>
+        )}
+
+        {/* Footer Meta */}
+        <View style={styles.footer}>
+          {showLocation && (
+            <View style={styles.metaItem}>
+              <Ionicons name="location" size={12} color={COLORS.text.secondary} />
+              <Text style={styles.metaText}>Nearby</Text>
+            </View>
+          )}
+          
+          <View style={styles.metaItem}>
+            <View style={styles.ratingDot} />
+            <Text style={styles.metaText}>Popular</Text>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// ============================================
+// COMPACT SERVICE CARD (For Horizontal Lists)
+// ============================================
+export const ServiceCardCompact: React.FC<Props> = ({
+  service,
+  onPress,
+  style,
+  showProviderInfo = false,
+  showCategory = false,
+  categoryName,
+}) => {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const primaryImage = useMemo(() => {
+    const first = service.images?.[0];
+    return typeof first === 'string' && first.trim().length > 0 ? first : null;
+  }, [service.images]);
+
+  const priceText = useMemo(() => {
+    const n = Number(service.base_price);
+    if (Number.isFinite(n)) return `${n.toFixed(0)}`;
+    return `${service.base_price}`;
+  }, [service.base_price]);
+
+  const durationText = service.duration_minutes ? `${service.duration_minutes} min` : null;
+
+  return (
+    <TouchableOpacity 
+      style={[styles.compactCard, style]} 
+      onPress={onPress} 
+      activeOpacity={0.85}
+    >
+      {/* Image */}
+      <View style={styles.compactImageContainer}>
+        {primaryImage && !imgFailed ? (
+          <>
+            <Image
+              source={{ uri: primaryImage }}
+              style={styles.compactImage as ImageStyle}
+              resizeMode="cover"
+              onError={() => setImgFailed(true)}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.6)']}
+              style={styles.compactGradient}
+            />
+          </>
+        ) : (
+          <LinearGradient
+            colors={['#EFF6FF', '#DBEAFE']}
+            style={styles.compactImageFallback}
+          >
+            <Ionicons name="image-outline" size={32} color={COLORS.primary} />
+          </LinearGradient>
+        )}
+
+        {/* Price Badge */}
+        <View style={styles.compactPriceBadge}>
+          <Text style={styles.compactPriceText}>QAR {priceText}</Text>
+        </View>
+
+        {/* Duration if available */}
+        {durationText && (
+          <View style={styles.compactDurationBadge}>
+            <Ionicons name="time" size={10} color={COLORS.text.secondary} />
+            <Text style={styles.compactDurationText}>{durationText}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Content */}
+      <View style={styles.compactContent}>
+        <Text numberOfLines={2} style={styles.compactTitle}>
+          {service.title}
         </Text>
 
-        {/* Bottom meta row - Only Location */}
-        {showLocation && (
-          <View style={styles.bottomRow}>
-            <View style={styles.metaChipSecondary}>
-              <Ionicons name="location-outline" size={14} color={COLORS.text.secondary} />
-              <Text style={styles.metaChipSecondaryText} numberOfLines={1}>
-                Nearby
-              </Text>
-            </View>
+        {showCategory && categoryName && (
+          <View style={styles.compactCategoryBadge}>
+            <Text style={styles.compactCategoryText} numberOfLines={1}>
+              {categoryName}
+            </Text>
           </View>
         )}
       </View>
@@ -150,132 +265,291 @@ export const ServiceCard: React.FC<Props> = ({
   );
 };
 
+// ============================================
+// STYLES
+// ============================================
 const styles = StyleSheet.create({
+  // Main Card Styles
   card: {
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: SIZES.radius,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  imageWrap: {
+  imageContainer: {
     position: 'relative',
     width: '100%',
-    height: 180,
+    height: 160,
+    backgroundColor: '#F9FAFB',
   },
   image: {
     width: '100%',
     height: '100%',
   },
+  imageGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+  },
   imageFallback: {
     width: '100%',
     height: '100%',
-    backgroundColor: COLORS.background.tertiary,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
   },
-  fallbackText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.light,
-  },
-  pricePill: {
+  priceBadge: {
     position: 'absolute',
     top: 12,
     right: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  priceGradient: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
     gap: 4,
   },
-  pricePillText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#fff',
+  priceAmount: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  durationPill: {
+  categoryBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  categoryBadgeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  categoryBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  durationBadge: {
     position: 'absolute',
     bottom: 12,
     left: 12,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  durationBadgeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: 6,
     gap: 4,
   },
-  durationPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-  },
-  body: {
-    padding: 14,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  title: {
-    flex: 1,
-    fontSize: SIZES.h4,
+  durationText: {
+    fontSize: 11,
     fontWeight: '700',
     color: COLORS.text.primary,
-    marginRight: 8,
   },
-  categoryPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background.tertiary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
+  content: {
+    padding: 16,
   },
-  categoryText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: COLORS.text.secondary,
-    textTransform: 'uppercase',
+  title: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+    lineHeight: 22,
   },
-  providerRow: {
+  providerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
     gap: 6,
   },
-  providerText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-    fontWeight: '600',
+  providerBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerName: {
     flex: 1,
-  },
-  desc: {
-    fontSize: SIZES.small,
+    fontSize: 13,
+    fontWeight: '600',
     color: COLORS.text.secondary,
-    lineHeight: 20,
-    marginBottom: 10,
   },
-  bottomRow: {
+  description: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
-  metaChipSecondary: {
+  metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  metaChipSecondaryText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
+  metaText: {
+    fontSize: 12,
     fontWeight: '500',
+    color: COLORS.text.secondary,
+  },
+  ratingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+
+  // Compact Card Styles
+  compactCard: {
+    width: 220,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  compactImageContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 140,
+  },
+  compactImage: {
+    width: '100%',
+    height: '100%',
+  },
+  compactImageFallback: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compactGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 50,
+  },
+  compactPriceBadge: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  compactPriceText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  compactDurationBadge: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  compactDurationText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  compactContent: {
+    padding: 14,
+  },
+  compactTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  compactCategoryBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  compactCategoryText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
   },
 });

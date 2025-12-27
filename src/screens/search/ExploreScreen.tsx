@@ -12,13 +12,17 @@ import {
   ScrollView,
   SafeAreaView,
   Image,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import api from '../../services/api';
 import { COLORS, SIZES } from '../../constants/colors';
 import { ServiceCard } from '../../components/services/ServiceCard';
+
+const { width } = Dimensions.get('window');
 
 type Category = {
   id: string;
@@ -48,7 +52,6 @@ export const ExploreScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searching, setSearching] = useState(false);
 
-  // Get initial params from navigation
   const initialCategory = route.params?.initialCategory;
   const initialMode = route.params?.searchMode || 'services';
 
@@ -59,8 +62,6 @@ export const ExploreScreen: React.FC = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory || null);
 
-
-  // Pagination state
   const [hasMoreServices, setHasMoreServices] = useState(false);
   const [hasMoreProviders, setHasMoreProviders] = useState(false);
   const [totalServices, setTotalServices] = useState(0);
@@ -147,7 +148,7 @@ export const ExploreScreen: React.FC = () => {
   useEffect(() => {
     if (route.params?.initialCategory) {
       setSelectedCategory(route.params.initialCategory);
-      setSearchMode('services'); // Always switch to services when filtering by category
+      setSearchMode('services');
     }
     if (route.params?.searchMode) {
       setSearchMode(route.params.searchMode);
@@ -194,11 +195,6 @@ export const ExploreScreen: React.FC = () => {
     }
   };
 
-  const viewAllProviders = () => {
-    // TODO: Navigate to all providers screen
-    console.log('Navigate to all providers');
-  };
-
   const switchMode = (mode: SearchMode) => {
     setSearchMode(mode);
     setQuery('');
@@ -207,10 +203,10 @@ export const ExploreScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.muted}>Loading explore…</Text>
+          <Text style={styles.loadingText}>Discovering services...</Text>
         </View>
       </SafeAreaView>
     );
@@ -222,139 +218,173 @@ export const ExploreScreen: React.FC = () => {
   const hasMore = searchMode === 'services' ? hasMoreServices : hasMoreProviders;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Header */}
-        <View style={styles.headerWrap}>
-          <View style={styles.topRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.h1}>Explore</Text>
-              <Text style={styles.subH1}>Search services and discover what's near you.</Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Notifications')}
-              style={styles.iconBtn}
-              activeOpacity={0.9}
-            >
-              <Ionicons name="notifications-outline" size={20} color={COLORS.text.primary} />
-            </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      {/* Fixed Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Explore</Text>
+            <Text style={styles.headerSubtitle}>Discover services & providers</Text>
           </View>
 
-          {/* Search Mode Toggle */}
-          <View style={styles.modeToggle}>
-            <TouchableOpacity
-              style={[styles.modeButton, searchMode === 'services' && styles.modeButtonActive]}
-              onPress={() => switchMode('services')}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="briefcase-outline"
-                size={18}
-                color={searchMode === 'services' ? '#fff' : COLORS.text.secondary}
-              />
-              <Text style={[styles.modeText, searchMode === 'services' && styles.modeTextActive]}>
-                Services
-              </Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.notificationBtn}
+            onPress={() => navigation.navigate('Notifications')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="notifications-outline" size={24} color={COLORS.text.primary} />
+            <View style={styles.notificationDot} />
+          </TouchableOpacity>
+        </View>
 
-            <TouchableOpacity
-              style={[styles.modeButton, searchMode === 'shops' && styles.modeButtonActive]}
-              onPress={() => switchMode('shops')}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="storefront-outline"
-                size={18}
-                color={searchMode === 'shops' ? '#fff' : COLORS.text.secondary}
-              />
-              <Text style={[styles.modeText, searchMode === 'shops' && styles.modeTextActive]}>
-                Shops
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Search Bar */}
-          <View style={styles.searchCard}>
-            <View style={styles.searchIcon}>
-              <Ionicons name="search-outline" size={18} color={COLORS.text.secondary} />
-            </View>
-
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={20} color={COLORS.text.secondary} />
             <TextInput
-              placeholder={searchMode === 'services' ? 'Search services…' : 'Search shops…'}
+              placeholder={searchMode === 'services' ? 'Search services...' : 'Search shops...'}
               placeholderTextColor={COLORS.text.secondary}
               value={query}
               onChangeText={setQuery}
               style={styles.searchInput}
               returnKeyType="search"
             />
-
-            {isSearching && (
-              <TouchableOpacity onPress={clearSearch} style={styles.clearBtn} activeOpacity={0.9}>
-                <Ionicons name="close" size={18} color={COLORS.text.secondary} />
+            {(query || selectedCategory) && (
+              <TouchableOpacity onPress={clearSearch} activeOpacity={0.7}>
+                <View style={styles.clearButton}>
+                  <Ionicons name="close" size={18} color={COLORS.text.secondary} />
+                </View>
               </TouchableOpacity>
             )}
           </View>
-
-          {/* Active filters indicator */}
-          {isSearching && (
-            <View style={styles.filterIndicator}>
-              <Ionicons name="funnel-outline" size={14} color={COLORS.primary} />
-              <Text style={styles.filterText}>
-                {query && `"${query}"`}
-                {query && selectedCategory && ' • '}
-                {selectedCategory && categories.find(c => c.id === selectedCategory)?.name}
-              </Text>
-            </View>
-          )}
-
-          {/* Categories - Only show for services mode */}
-          {searchMode === 'services' && (
-            <View style={{ marginTop: 16 }}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Categories</Text>
-                {selectedCategory && (
-                  <TouchableOpacity onPress={() => setSelectedCategory(null)} activeOpacity={0.9}>
-                    <Text style={styles.link}>Clear filter</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.chipsRow}>
-                  {categories.map((c) => (
-                    <CategoryChip
-                      key={c.id}
-                      c={c}
-                      onPress={() => openCategory(c.id)}
-                      isSelected={c.id === selectedCategory}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          )}
         </View>
 
-        {/* Content based on search mode and search state */}
-        {!isSearching && searchMode === 'shops' && featuredProviders.length > 0 && (
-          <View style={styles.section}>
-            <View style={[styles.sectionHeader, styles.sectionHeaderPadded]}>
-              <Text style={styles.sectionTitle}>Featured Shops</Text>
-              {/* <TouchableOpacity onPress={viewAllProviders} activeOpacity={0.9}>
-                <View style={styles.viewAllBtn}>
-                  <Text style={styles.link}>View all</Text>
-                  <Ionicons name="arrow-forward" size={14} color={COLORS.primary} />
-                </View>
-              </TouchableOpacity> */}
+        {/* Mode Toggle */}
+        <View style={styles.modeContainer}>
+          <TouchableOpacity
+            style={[styles.modeButton, searchMode === 'services' && styles.modeButtonActive]}
+            onPress={() => switchMode('services')}
+            activeOpacity={0.7}
+          >
+            {searchMode === 'services' ? (
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.modeGradient}
+              >
+                <Ionicons name="briefcase" size={18} color="#FFF" />
+                <Text style={styles.modeTextActive}>Services</Text>
+                {!isSearching && (
+                  <View style={styles.modeBadge}>
+                    <Text style={styles.modeBadgeText}>{totalServices}</Text>
+                  </View>
+                )}
+              </LinearGradient>
+            ) : (
+              <View style={styles.modeInactive}>
+                <Ionicons name="briefcase-outline" size={18} color={COLORS.text.secondary} />
+                <Text style={styles.modeText}>Services</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modeButton, searchMode === 'shops' && styles.modeButtonActive]}
+            onPress={() => switchMode('shops')}
+            activeOpacity={0.7}
+          >
+            {searchMode === 'shops' ? (
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.modeGradient}
+              >
+                <Ionicons name="storefront" size={18} color="#FFF" />
+                <Text style={styles.modeTextActive}>Shops</Text>
+                {!isSearching && (
+                  <View style={styles.modeBadge}>
+                    <Text style={styles.modeBadgeText}>{totalProviders}</Text>
+                  </View>
+                )}
+              </LinearGradient>
+            ) : (
+              <View style={styles.modeInactive}>
+                <Ionicons name="storefront-outline" size={18} color={COLORS.text.secondary} />
+                <Text style={styles.modeText}>Shops</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Active Filters */}
+        {isSearching && (
+          <View style={styles.activeFilters}>
+            <Ionicons name="funnel" size={14} color={COLORS.primary} />
+            <Text style={styles.activeFiltersText}>
+              {query && `"${query}"`}
+              {query && selectedCategory && ' • '}
+              {selectedCategory && categories.find(c => c.id === selectedCategory)?.name}
+            </Text>
+            <TouchableOpacity onPress={clearSearch} style={styles.clearFiltersBtn}>
+              <Text style={styles.clearFiltersText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
+        {/* Categories - Only for services mode */}
+        {searchMode === 'services' && categories.length > 0 && (
+          <View style={styles.categoriesSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Categories</Text>
+              {selectedCategory && (
+                <TouchableOpacity onPress={() => setSelectedCategory(null)}>
+                  <Text style={styles.clearCategoryText}>Clear</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.shopsRow}>
+              <View style={styles.categoriesRow}>
+                {categories.map((c) => (
+                  <CategoryChip
+                    key={c.id}
+                    category={c}
+                    onPress={() => openCategory(c.id)}
+                    isSelected={c.id === selectedCategory}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Featured/Popular Section (when not searching) */}
+        {!isSearching && searchMode === 'shops' && featuredProviders.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderPadded}>
+              <View>
+                <Text style={styles.sectionTitle}>Featured Shops</Text>
+                <Text style={styles.sectionSubtitle}>Top rated providers</Text>
+              </View>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.horizontalList}>
                 {featuredProviders.map((provider) => (
                   <ShopCard
                     key={provider.id}
@@ -369,13 +399,15 @@ export const ExploreScreen: React.FC = () => {
 
         {!isSearching && searchMode === 'services' && popularServices.length > 0 && (
           <View style={styles.section}>
-            <View style={[styles.sectionHeader, styles.sectionHeaderPadded]}>
-              <Text style={styles.sectionTitle}>Popular Services</Text>
-              <Text style={styles.hint}>{popularServices.length} picks</Text>
+            <View style={styles.sectionHeaderPadded}>
+              <View>
+                <Text style={styles.sectionTitle}>Popular Services</Text>
+                <Text style={styles.sectionSubtitle}>Most booked this week</Text>
+              </View>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.popularRow}>
+              <View style={styles.horizontalList}>
                 {popularServices.map((service) => (
                   <ServiceCard
                     key={service.id}
@@ -389,13 +421,18 @@ export const ExploreScreen: React.FC = () => {
           </View>
         )}
 
-        {/* Search Results or All Items */}
-        <View style={styles.section}>
-          <View style={[styles.sectionHeader, styles.sectionHeaderPadded]}>
-            <Text style={styles.sectionTitle}>
-              {isSearching ? 'Search Results' : searchMode === 'services' ? 'All Services' : 'All Shops'}
-            </Text>
-            <Text style={styles.hint}>{currentTotal} results</Text>
+        {/* Main Results */}
+        <View style={styles.resultsSection}>
+          <View style={styles.sectionHeaderPadded}>
+            <View>
+              <Text style={styles.sectionTitle}>
+                {isSearching 
+                  ? 'Search Results' 
+                  : searchMode === 'services' ? 'All Services' : 'All Shops'
+                }
+              </Text>
+              <Text style={styles.sectionSubtitle}>{currentTotal} results</Text>
+            </View>
           </View>
 
           {searchMode === 'services' ? (
@@ -410,7 +447,7 @@ export const ExploreScreen: React.FC = () => {
               ))}
             </View>
           ) : (
-            <View>
+            <View style={styles.providersListContainer}>
               {currentData.map((provider) => (
                 <ProviderCard
                   key={provider.id}
@@ -422,84 +459,157 @@ export const ExploreScreen: React.FC = () => {
           )}
 
           {currentData.length === 0 && !searching && (
-            <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
+            <View style={styles.emptyState}>
+              <LinearGradient
+                colors={['#EFF6FF', '#DBEAFE']}
+                style={styles.emptyIconContainer}
+              >
                 <Ionicons
                   name={searchMode === 'services' ? 'briefcase-outline' : 'storefront-outline'}
-                  size={22}
+                  size={40}
                   color={COLORS.primary}
                 />
-              </View>
+              </LinearGradient>
               <Text style={styles.emptyTitle}>
                 No {searchMode === 'services' ? 'services' : 'shops'} found
               </Text>
-              <Text style={styles.muted}>
+              <Text style={styles.emptySubtitle}>
                 {isSearching
-                  ? 'Try another keyword or filter.'
-                  : `No ${searchMode} available at the moment.`}
+                  ? 'Try adjusting your search or filters'
+                  : `Check back later for new ${searchMode}`}
               </Text>
 
               {isSearching && (
-                <TouchableOpacity style={styles.secondaryBtn} onPress={clearSearch} activeOpacity={0.9}>
-                  <Text style={styles.secondaryBtnText}>Clear filters</Text>
+                <TouchableOpacity style={styles.clearButton2} onPress={clearSearch}>
+                  <Text style={styles.clearButtonText}>Clear Filters</Text>
                 </TouchableOpacity>
               )}
             </View>
           )}
 
+          {searching && (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.loadingMoreText}>Loading...</Text>
+            </View>
+          )}
+
           {hasMore && !searching && currentData.length > 0 && (
-            <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore}>
-              <Text style={styles.loadMoreText}>
-                Load more {searchMode === 'services' ? 'services' : 'shops'}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={COLORS.primary} />
+            <TouchableOpacity style={styles.loadMoreButton} onPress={loadMore}>
+              <LinearGradient
+                colors={['#F9FAFB', '#F3F4F6']}
+                style={styles.loadMoreGradient}
+              >
+                <Text style={styles.loadMoreText}>
+                  Load More {searchMode === 'services' ? 'Services' : 'Shops'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
+              </LinearGradient>
             </TouchableOpacity>
           )}
         </View>
 
-        {searching && (
-          <View style={styles.loadingMore}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-            <Text style={styles.muted}>Loading...</Text>
-          </View>
-        )}
-
-        <View style={{ height: 40 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-// Shop Card Component (Horizontal)
+// Category Chip Component
+const CategoryChip: React.FC<{
+  category: Category;
+  onPress: () => void;
+  isSelected?: boolean;
+}> = ({ category, onPress, isSelected = false }) => {
+  const icon = (category.icon ?? '').trim();
+  const hasIconUrl = looksLikeUrl(icon);
+
+  const iconNode = hasIconUrl ? (
+    <Image source={{ uri: icon }} style={styles.chipImage} />
+  ) : icon.length > 0 ? (
+    <Text style={styles.chipEmoji}>{icon}</Text>
+  ) : (
+    <Ionicons
+      name="construct"
+      size={18}
+      color={isSelected ? '#FFF' : COLORS.primary}
+    />
+  );
+
+  return (
+    <TouchableOpacity
+      style={[styles.categoryChip, isSelected && styles.categoryChipActive]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {isSelected ? (
+        <LinearGradient
+          colors={[COLORS.primary, COLORS.secondary]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.chipGradient}
+        >
+          <View style={styles.chipIconContainer}>
+            {iconNode}
+          </View>
+          <Text style={styles.chipTextActive} numberOfLines={1}>
+            {category.name}
+          </Text>
+        </LinearGradient>
+      ) : (
+        <View style={styles.chipInactive}>
+          <View style={styles.chipIconContainer}>
+            {iconNode}
+          </View>
+          <Text style={styles.chipText} numberOfLines={1}>
+            {category.name}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+// Shop Card Component
 const ShopCard: React.FC<{ provider: any; onPress: () => void }> = ({ provider, onPress }) => {
   const businessName = provider.business_name || `${provider.first_name} ${provider.last_name}`;
   const avatarUri = provider.business_logo || provider.profile_image;
 
   return (
-    <TouchableOpacity style={styles.shopCard} onPress={onPress} activeOpacity={0.7}>
-      {avatarUri ? (
-        <Image source={{ uri: avatarUri }} style={styles.shopAvatar} />
-      ) : (
-        <View style={styles.shopAvatarPlaceholder}>
-          <Text style={styles.shopAvatarText}>{businessName.charAt(0).toUpperCase()}</Text>
+    <TouchableOpacity style={styles.shopCard} onPress={onPress} activeOpacity={0.8}>
+      <View style={styles.shopImageContainer}>
+        {avatarUri ? (
+          <Image source={{ uri: avatarUri }} style={styles.shopImage} />
+        ) : (
+          <LinearGradient
+            colors={[COLORS.primary, COLORS.secondary]}
+            style={styles.shopPlaceholder}
+          >
+            <Text style={styles.shopPlaceholderText}>
+              {businessName.charAt(0).toUpperCase()}
+            </Text>
+          </LinearGradient>
+        )}
+        <View style={styles.shopBadge}>
+          <Ionicons name="checkmark-circle" size={20} color="#10B981" />
         </View>
-      )}
+      </View>
 
       <View style={styles.shopInfo}>
         <Text style={styles.shopName} numberOfLines={1}>
           {businessName}
         </Text>
         {provider.country && (
-          <View style={styles.shopLocation}>
-            <Ionicons name="location-outline" size={12} color={COLORS.text.secondary} />
-            <Text style={styles.shopLocationText} numberOfLines={1}>
+          <View style={styles.shopMeta}>
+            <Ionicons name="location" size={12} color={COLORS.text.secondary} />
+            <Text style={styles.shopMetaText} numberOfLines={1}>
               {provider.country}
             </Text>
           </View>
         )}
-        <View style={styles.shopServices}>
-          <Ionicons name="briefcase-outline" size={12} color={COLORS.primary} />
-          <Text style={styles.shopServicesText}>{provider.service_count} services</Text>
+        <View style={styles.shopServicesBadge}>
+          <Ionicons name="briefcase" size={10} color={COLORS.primary} />
+          <Text style={styles.shopServicesBadgeText}>{provider.service_count} services</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -512,21 +622,22 @@ const ProviderCard: React.FC<{ provider: any; onPress: () => void }> = ({ provid
   const avatarUri = provider.business_logo || provider.profile_image;
 
   return (
-    <TouchableOpacity style={styles.providerCard} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.providerCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.providerContent}>
         {avatarUri ? (
           <Image source={{ uri: avatarUri }} style={styles.providerAvatar} />
         ) : (
-          <View style={styles.providerAvatarPlaceholder}>
-            <Text style={styles.avatarText}>{businessName.charAt(0).toUpperCase()}</Text>
-          </View>
+          <LinearGradient
+            colors={[COLORS.primary, COLORS.secondary]}
+            style={styles.providerAvatarPlaceholder}
+          >
+            <Text style={styles.providerPlaceholderText}>
+              {businessName.charAt(0).toUpperCase()}
+            </Text>
+          </LinearGradient>
         )}
 
         <View style={styles.providerInfo}>
-          <View style={styles.providerBadge}>
-            <Ionicons name="storefront" size={12} color={COLORS.primary} />
-            <Text style={styles.providerBadgeText}>Shop</Text>
-          </View>
           <Text style={styles.providerName} numberOfLines={1}>
             {businessName}
           </Text>
@@ -538,12 +649,12 @@ const ProviderCard: React.FC<{ provider: any; onPress: () => void }> = ({ provid
           <View style={styles.providerMeta}>
             {provider.country && (
               <View style={styles.metaItem}>
-                <Ionicons name="location-outline" size={12} color={COLORS.text.secondary} />
+                <Ionicons name="location" size={12} color={COLORS.text.secondary} />
                 <Text style={styles.metaText}>{provider.country}</Text>
               </View>
             )}
             <View style={styles.metaItem}>
-              <Ionicons name="briefcase-outline" size={12} color={COLORS.text.secondary} />
+              <Ionicons name="briefcase" size={12} color={COLORS.primary} />
               <Text style={styles.metaText}>{provider.service_count} services</Text>
             </View>
           </View>
@@ -555,84 +666,124 @@ const ProviderCard: React.FC<{ provider: any; onPress: () => void }> = ({ provid
   );
 };
 
-const CategoryChip: React.FC<{
-  c: Category;
-  onPress: () => void;
-  isSelected?: boolean;
-}> = ({ c, onPress, isSelected = false }) => {
-  const icon = (c.icon ?? '').trim();
-
-  const leftNode = looksLikeUrl(icon) ? (
-    <Image source={{ uri: icon }} style={styles.chipIconImg} />
-  ) : icon.length > 0 ? (
-    <Text style={styles.chipEmoji}>{icon}</Text>
-  ) : (
-    <Ionicons
-      name="grid-outline"
-      size={16}
-      color={isSelected ? '#fff' : COLORS.primary}
-    />
-  );
-
-  return (
-    <TouchableOpacity
-      style={[styles.chip, isSelected && styles.chipActive]}
-      onPress={onPress}
-      activeOpacity={0.9}
-    >
-      <View style={[styles.chipIcon, isSelected && styles.chipIconActive]}>
-        {leftNode}
-      </View>
-      <Text style={[styles.chipText, isSelected && styles.chipTextActive]} numberOfLines={1}>
-        {c.name}
-      </Text>
-    </TouchableOpacity>
-  );
-};
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.background.primary },
-  scrollView: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
-  muted: { marginTop: 10, fontSize: 13, color: COLORS.text.secondary, textAlign: 'center' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  scrollView: {
+    flex: 1,
+  },
 
-  headerWrap: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8 },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  h1: { fontSize: 28, fontWeight: '900', color: COLORS.text.primary },
-  subH1: { marginTop: 6, fontSize: 13, color: COLORS.text.secondary, lineHeight: 18 },
-  iconBtn: {
-    width: 42,
-    height: 42,
+  // Header
+  header: {
+    backgroundColor: '#FFFFFF',
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  notificationBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.danger,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+
+  // Search
+  searchContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
     borderRadius: 16,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text.primary,
+  },
+  clearButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   // Mode Toggle
-  modeToggle: {
+  modeContainer: {
     flexDirection: 'row',
-    marginTop: 14,
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: 14,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingHorizontal: 20,
+    gap: 12,
   },
   modeButton: {
     flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  modeButtonActive: {
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modeGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    gap: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 8,
   },
-  modeButtonActive: {
-    backgroundColor: COLORS.primary,
+  modeInactive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    gap: 8,
   },
   modeText: {
     fontSize: 14,
@@ -640,266 +791,400 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
   },
   modeTextActive: {
-    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modeBadge: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  modeBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 
-  searchCard: {
+  // Active Filters
+  activeFilters: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 12,
+    marginHorizontal: 20,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    gap: 10,
-  },
-  searchIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 14,
-    backgroundColor: COLORS.background.primary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchInput: { flex: 1, fontSize: 14.5, color: COLORS.text.primary },
-  clearBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 14,
-    backgroundColor: COLORS.background.primary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  filterIndicator: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: COLORS.background.secondary,
+    backgroundColor: '#EFF6FF',
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignSelf: 'flex-start',
+    gap: 8,
   },
-  filterText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  activeFiltersText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  clearFiltersBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+  },
+  clearFiltersText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
 
-  section: { marginTop: 18 },
+  // Categories
+  categoriesSection: {
+    paddingVertical: 20,
+  },
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    paddingHorizontal: 20,
+    marginBottom: 12,
   },
-  sectionHeaderPadded: { paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '900', color: COLORS.text.primary },
-  hint: { fontSize: 12, fontWeight: '700', color: COLORS.text.secondary },
-  link: { fontSize: 12.5, fontWeight: '800', color: COLORS.primary },
-  viewAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 4,
   },
-
-  chipsRow: { flexDirection: 'row', gap: 10, paddingVertical: 2 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    maxWidth: 190,
+  sectionSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
   },
-  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  chipIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: COLORS.background.primary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  chipIconActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  chipIconImg: { width: '100%', height: '100%' },
-  chipEmoji: { fontSize: 14 },
-  chipText: { fontSize: 13, fontWeight: '900', color: COLORS.text.primary },
-  chipTextActive: { color: '#fff' },
-
-  // Shops horizontal row
-  shopsRow: { flexDirection: 'row', paddingLeft: 16, paddingBottom: 4 },
-  shopCard: {
-    width: 140,
-    marginRight: 12,
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: SIZES.radius,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    overflow: 'hidden',
-  },
-  shopAvatar: {
-    width: '100%',
-    height: 120,
-  },
-  shopAvatarPlaceholder: {
-    width: '100%',
-    height: 120,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  shopAvatarText: {
-    fontSize: 40,
+  clearCategoryText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: COLORS.primary,
+  },
+  categoriesRow: {
+    flexDirection: 'row',
+    paddingLeft: 20,
+    gap: 10,
+  },
+  categoryChip: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  categoryChipActive: {
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  chipGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  chipInactive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    gap: 10,
+  },
+  chipIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  chipImage: {
+    width: '100%',
+    height: '100%',
+  },
+  chipEmoji: {
+    fontSize: 16,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  chipTextActive: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Sections
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeaderPadded: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  horizontalList: {
+    flexDirection: 'row',
+    paddingLeft: 20,
+  },
+
+  // Shop Cards
+  shopCard: {
+    width: 160,
+    marginRight: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  shopImageContainer: {
+    position: 'relative',
+  },
+  shopImage: {
+    width: '100%',
+    height: 120,
+  },
+  shopPlaceholder: {
+    width: '100%',
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shopPlaceholderText: {
+    fontSize: 40,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  shopBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   shopInfo: {
-    padding: 12,
+    padding: 14,
   },
   shopName: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: COLORS.text.primary,
     marginBottom: 6,
   },
-  shopLocation: {
+  shopMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  shopLocationText: {
+  shopMetaText: {
     fontSize: 12,
     color: COLORS.text.secondary,
   },
-  shopServices: {
+  shopServicesBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
   },
-  shopServicesText: {
-    fontSize: 12,
+  shopServicesBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
     color: COLORS.primary,
   },
 
-  // Popular services
-  popularRow: { flexDirection: 'row', paddingLeft: 16, paddingBottom: 4 },
-  popularCard: { width: 230, marginRight: 12 },
+  // Popular Services
+  popularCard: {
+    width: 220,
+    marginRight: 16,
+  },
 
-  // Provider Card (full width for search results)
-  providerCard: {
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: SIZES.radius,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  // Results Section
+  resultsSection: {
+    marginTop: 24,
   },
-  providerContent: {
-    flexDirection: 'row',
-    padding: 14,
-    alignItems: 'center',
-  },
-  providerAvatar: { width: 56, height: 56, borderRadius: 28 },
-  providerAvatarPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: { fontSize: 22, fontWeight: '600', color: '#fff' },
-  providerInfo: { flex: 1, marginLeft: 12, marginRight: 8 },
-  providerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: COLORS.background.primary,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignSelf: 'flex-start',
-    marginBottom: 6,
-  },
-  providerBadgeText: { fontSize: 11, fontWeight: '700', color: COLORS.primary },
-  providerName: { fontSize: SIZES.body, fontWeight: '700', color: COLORS.text.primary, marginBottom: 4 },
-  providerDescription: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-    lineHeight: 18,
-    marginBottom: 6,
-  },
-  providerMeta: { flexDirection: 'row', gap: 12 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: SIZES.small, color: COLORS.text.secondary },
-
-  // Services grid
   servicesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     justifyContent: 'space-between',
   },
-  gridCard: { width: '48%', marginHorizontal: 0, marginBottom: 12 },
-
-  loadingMore: { paddingVertical: 20, alignItems: 'center' },
-  loadMoreBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignSelf: 'center',
-    marginVertical: 20,
-    marginHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  gridCard: {
+    width: '48%',
+    marginHorizontal: 0,
+    marginBottom: 16,
   },
-  loadMoreText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
 
-  empty: { alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  // Provider Cards
+  providersListContainer: {
+    paddingHorizontal: 20,
+  },
+  providerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  providerContent: {
+    flexDirection: 'row',
+    padding: 16,
+    alignItems: 'center',
+  },
+  providerAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  providerAvatarPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyTitle: { marginTop: 10, fontSize: 16, fontWeight: '900', color: COLORS.text.primary },
-  secondaryBtn: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  providerPlaceholderText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  secondaryBtnText: { fontSize: 13, fontWeight: '900', color: COLORS.text.primary },
+  providerInfo: {
+    flex: 1,
+    marginLeft: 14,
+    marginRight: 10,
+  },
+  providerName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  providerDescription: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  providerMeta: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+  },
+
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  clearButton2: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: COLORS.primary,
+    borderRadius: 16,
+  },
+  clearButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  loadingMore: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingMoreText: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+  },
+
+  // Load More
+  loadMoreButton: {
+    marginHorizontal: 20,
+    marginVertical: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  loadMoreGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
 });

@@ -9,13 +9,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  SafeAreaView,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../context/AuthContext';
-import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
 import { COLORS, SIZES } from '../../constants/colors';
 
 type AuthStackParamList = {
@@ -38,18 +39,10 @@ export const RegisterScreen: React.FC = () => {
     confirmPassword: '',
   });
 
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-
-  const palette = useMemo(() => {
-    return {
-      surface: (COLORS as any).surface ?? '#FFFFFF',
-      border: (COLORS as any).border ?? 'rgba(0,0,0,0.08)',
-      muted: (COLORS as any).muted ?? 'rgba(0,0,0,0.04)',
-      shadow: (COLORS as any).shadow ?? 'rgba(0,0,0,0.16)',
-      ok: (COLORS as any).success ?? '#16A34A',
-    };
-  }, []);
 
   const updateField = (field: keyof typeof formData, value: string) => {
     setFormData({ ...formData, [field]: value });
@@ -105,323 +98,536 @@ export const RegisterScreen: React.FC = () => {
     }
   };
 
-  const rules = useMemo(() => {
+  const passwordRules = useMemo(() => {
     const pwd = formData.password;
     return [
-      { label: 'At least 6 characters', ok: pwd.length >= 6 },
-      { label: 'One uppercase letter', ok: /[A-Z]/.test(pwd) },
-      { label: 'One lowercase letter', ok: /[a-z]/.test(pwd) },
-      { label: 'One number', ok: /\d/.test(pwd) },
+      { label: 'At least 6 characters', met: pwd.length >= 6 },
+      { label: 'One uppercase letter', met: /[A-Z]/.test(pwd) },
+      { label: 'One lowercase letter', met: /[a-z]/.test(pwd) },
+      { label: 'One number', met: /\d/.test(pwd) },
     ];
   }, [formData.password]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={[styles.container, { backgroundColor: COLORS.background.primary }]}
-    >
-      {/* Decorative background blobs */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.blob,
-          styles.blobOne,
-          { backgroundColor: (COLORS as any).primarySoft ?? palette.muted },
-        ]}
-      />
-      <View
-        pointerEvents="none"
-        style={[
-          styles.blob,
-          styles.blobTwo,
-          { backgroundColor: (COLORS as any).primarySoft2 ?? palette.muted },
-        ]}
-      />
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        <View style={styles.content}>
-          {/* Hero */}
-          <View style={styles.hero}>
-            <View style={[styles.heroIcon, { backgroundColor: (COLORS as any).primarySoft ?? palette.muted }]}>
-              <Ionicons name="person-add" size={18} color={COLORS.primary} />
-            </View>
-            <Text style={styles.brand}>Servio</Text>
-            <Text style={styles.heroTitle}>Create account</Text>
-            <Text style={styles.heroSubtitle}>
-              Book trusted services, track orders, and save favorites.
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.logoContainer}
+            >
+              <Ionicons name="briefcase" size={32} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.brandName}>Servio</Text>
+            <Text style={styles.welcomeText}>Create your account</Text>
+            <Text style={styles.subtitleText}>
+              Join us to book trusted services and manage your orders
             </Text>
           </View>
 
-          {/* Card */}
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: palette.surface,
-                borderColor: palette.border,
-                shadowColor: palette.shadow,
-              },
-            ]}
-          >
-            <View style={styles.row}>
-              <View style={styles.halfInput}>
-                <Input
-                  label="First name"
-                  placeholder="John"
-                  value={formData.firstName}
-                  onChangeText={(text) => updateField('firstName', text)}
-                  error={errors.firstName}
-                  icon="person-outline"
-                />
-              </View>
-              <View style={styles.halfInput}>
-                <Input
-                  label="Last name"
-                  placeholder="Doe"
-                  value={formData.lastName}
-                  onChangeText={(text) => updateField('lastName', text)}
-                  error={errors.lastName}
-                  icon="person-outline"
-                />
-              </View>
-            </View>
-
-            <Input
-              label="Email"
-              placeholder="you@example.com"
-              value={formData.email}
-              onChangeText={(text) => updateField('email', text)}
-              error={errors.email}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              icon="mail-outline"
-            />
-
-            <Input
-              label="Phone (optional)"
-              placeholder="+974 1234 5678"
-              value={formData.phone}
-              onChangeText={(text) => updateField('phone', text)}
-              error={errors.phone}
-              keyboardType="phone-pad"
-              icon="call-outline"
-            />
-
-            <Input
-              label="Password"
-              placeholder="Create a password"
-              value={formData.password}
-              onChangeText={(text) => updateField('password', text)}
-              error={errors.password}
-              secureTextEntry
-              icon="lock-closed-outline"
-            />
-
-            <Input
-              label="Confirm password"
-              placeholder="Re-enter password"
-              value={formData.confirmPassword}
-              onChangeText={(text) => updateField('confirmPassword', text)}
-              error={errors.confirmPassword}
-              secureTextEntry
-              icon="lock-closed-outline"
-            />
-
-            {/* Password checklist */}
-            <View style={[styles.rulesBox, { backgroundColor: palette.muted, borderColor: palette.border }]}>
-              <Text style={styles.rulesTitle}>Password checklist</Text>
-              {rules.map((r) => (
-                <View key={r.label} style={styles.ruleRow}>
-                  <View
-                    style={[
-                      styles.ruleDot,
-                      {
-                        backgroundColor: r.ok ? palette.ok : 'transparent',
-                        borderColor: r.ok ? palette.ok : palette.border,
-                      },
-                    ]}
-                  >
-                    {r.ok ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+          {/* Form */}
+          <View style={styles.formSection}>
+            {/* Name Row */}
+            <View style={styles.nameRow}>
+              <View style={styles.nameInput}>
+                <Text style={styles.inputLabel}>First Name</Text>
+                <View style={[styles.inputContainer, errors.firstName && styles.inputContainerError]}>
+                  <View style={styles.inputIcon}>
+                    <Ionicons name="person" size={18} color={COLORS.text.secondary} />
                   </View>
-                  <Text style={[styles.ruleText, { color: r.ok ? COLORS.text.primary : COLORS.text.secondary }]}>
-                    {r.label}
-                  </Text>
+                  <TextInput
+                    value={formData.firstName}
+                    onChangeText={(text) => updateField('firstName', text)}
+                    placeholder="Michael"
+                    placeholderTextColor={COLORS.text.light}
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
                 </View>
-              ))}
+                {errors.firstName && (
+                  <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                    <Text style={styles.errorText}>{errors.firstName}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.nameInput}>
+                <Text style={styles.inputLabel}>Last Name</Text>
+                <View style={[styles.inputContainer, errors.lastName && styles.inputContainerError]}>
+                  <View style={styles.inputIcon}>
+                    <Ionicons name="person" size={18} color={COLORS.text.secondary} />
+                  </View>
+                  <TextInput
+                    value={formData.lastName}
+                    onChangeText={(text) => updateField('lastName', text)}
+                    placeholder="Smith"
+                    placeholderTextColor={COLORS.text.light}
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
+                </View>
+                {errors.lastName && (
+                  <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                    <Text style={styles.errorText}>{errors.lastName}</Text>
+                  </View>
+                )}
+              </View>
             </View>
 
-            <Button
-              title="Create account"
-              onPress={handleRegister}
-              loading={loading}
-              style={styles.primaryBtn}
-            />
+            {/* Email */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <View style={[styles.inputContainer, errors.email && styles.inputContainerError]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="mail" size={18} color={COLORS.text.secondary} />
+                </View>
+                <TextInput
+                  value={formData.email}
+                  onChangeText={(text) => updateField('email', text)}
+                  placeholder="you@example.com"
+                  placeholderTextColor={COLORS.text.light}
+                  style={styles.input}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              {errors.email && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                  <Text style={styles.errorText}>{errors.email}</Text>
+                </View>
+              )}
+            </View>
 
-            <Text style={styles.legal}>
-              By creating an account you agree to our Terms & Privacy Policy.
+            {/* Phone */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
+              <View style={[styles.inputContainer, errors.phone && styles.inputContainerError]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="call" size={18} color={COLORS.text.secondary} />
+                </View>
+                <TextInput
+                  value={formData.phone}
+                  onChangeText={(text) => updateField('phone', text)}
+                  placeholder="+974 1234 5678"
+                  placeholderTextColor={COLORS.text.light}
+                  style={styles.input}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              {errors.phone && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                  <Text style={styles.errorText}>{errors.phone}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Password */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={[styles.inputContainer, errors.password && styles.inputContainerError]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="lock-closed" size={18} color={COLORS.text.secondary} />
+                </View>
+                <TextInput
+                  value={formData.password}
+                  onChangeText={(text) => updateField('password', text)}
+                  placeholder="Create a password"
+                  placeholderTextColor={COLORS.text.light}
+                  style={styles.input}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.passwordToggle}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={COLORS.text.secondary}
+                  />
+                </TouchableOpacity>
+              </View>
+              {errors.password && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                  <Text style={styles.errorText}>{errors.password}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Confirm Password */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Confirm Password</Text>
+              <View style={[styles.inputContainer, errors.confirmPassword && styles.inputContainerError]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="lock-closed" size={18} color={COLORS.text.secondary} />
+                </View>
+                <TextInput
+                  value={formData.confirmPassword}
+                  onChangeText={(text) => updateField('confirmPassword', text)}
+                  placeholder="Re-enter password"
+                  placeholderTextColor={COLORS.text.light}
+                  style={styles.input}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.passwordToggle}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={COLORS.text.secondary}
+                  />
+                </TouchableOpacity>
+              </View>
+              {errors.confirmPassword && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                  <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Password Requirements */}
+            {formData.password && (
+              <View style={styles.passwordRules}>
+                <Text style={styles.passwordRulesTitle}>Password Requirements</Text>
+                {passwordRules.map((rule, index) => (
+                  <View key={index} style={styles.ruleRow}>
+                    <View style={[styles.ruleIcon, rule.met && styles.ruleIconMet]}>
+                      {rule.met ? (
+                        <Ionicons name="checkmark" size={12} color="#FFF" />
+                      ) : (
+                        <View style={styles.ruleIconEmpty} />
+                      )}
+                    </View>
+                    <Text style={[styles.ruleText, rule.met && styles.ruleTextMet]}>
+                      {rule.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Register Button */}
+            <TouchableOpacity
+              style={[styles.registerButton, loading && styles.registerButtonDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={loading ? ['#9CA3AF', '#6B7280'] : [COLORS.primary, COLORS.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.registerButtonGradient}
+              >
+                {loading ? (
+                  <>
+                    <Text style={styles.registerButtonText}>Creating account...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.registerButtonText}>Create Account</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Terms */}
+            <Text style={styles.termsText}>
+              By creating an account, you agree to our{' '}
+              <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+              <Text style={styles.termsLink}>Privacy Policy</Text>
             </Text>
           </View>
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')} activeOpacity={0.8}>
-              <Text style={styles.signInText}>Sign in</Text>
-            </TouchableOpacity>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <View style={styles.loginPrompt}>
+              <Text style={styles.loginText}>Already have an account?</Text>
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('Login')} 
+                activeOpacity={0.7}
+              >
+                <Text style={styles.loginLink}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
 
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 30,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 20 : 40,
+    paddingBottom: 40,
   },
 
-  content: {
-    flex: 1,
-    paddingHorizontal: SIZES.padding * 1.5,
-    paddingTop: 54,
+  // Header
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
   },
-
-  blob: {
-    position: 'absolute',
-    borderRadius: 999,
-    opacity: 0.7,
-  },
-  blobOne: {
-    width: 240,
-    height: 240,
-    top: -70,
-    left: -70,
-  },
-  blobTwo: {
-    width: 280,
-    height: 280,
-    bottom: -90,
-    right: -90,
-  },
-
-  hero: {
-    marginBottom: 18,
-  },
-
-  heroIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-
-  brand: {
-    fontSize: SIZES.body,
+  brandName: {
+    fontSize: 28,
     fontWeight: '800',
     color: COLORS.text.primary,
     marginBottom: 8,
   },
-
-  heroTitle: {
-    fontSize: SIZES.h1,
-    fontWeight: '900',
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: '700',
     color: COLORS.text.primary,
     marginBottom: 8,
   },
-
-  heroSubtitle: {
-    fontSize: SIZES.body,
+  subtitleText: {
+    fontSize: 15,
     color: COLORS.text.secondary,
-    lineHeight: 22,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+  // Form Section
+  formSection: {
+    marginBottom: 32,
   },
 
-  row: {
+  // Name Row
+  nameRow: {
     flexDirection: 'row',
-    marginHorizontal: -8,
+    gap: 12,
+    marginBottom: 20,
   },
-  halfInput: {
+  nameInput: {
     flex: 1,
-    marginHorizontal: 8,
   },
 
-  rulesBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 12,
-    marginTop: 6,
-    marginBottom: 14,
+  // Input Group
+  inputGroup: {
+    marginBottom: 20,
   },
-  rulesTitle: {
-    fontSize: SIZES.small,
-    fontWeight: '800',
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
     color: COLORS.text.primary,
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  inputContainerError: {
+    borderColor: COLORS.danger,
+    backgroundColor: '#FEF2F2',
+  },
+  inputIcon: {
+    width: 48,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text.primary,
+    paddingVertical: 16,
+    paddingRight: 16,
+  },
+  passwordToggle: {
+    width: 44,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  errorText: {
+    fontSize: 13,
+    color: COLORS.danger,
+  },
+
+  // Password Rules
+  passwordRules: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  passwordRulesTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 12,
   },
   ruleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 4,
+    marginBottom: 8,
   },
-  ruleDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    borderWidth: 1,
+  ruleIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ruleIconMet: {
+    backgroundColor: '#10B981',
+  },
+  ruleIconEmpty: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#9CA3AF',
+  },
   ruleText: {
-    fontSize: SIZES.small,
+    fontSize: 13,
+    color: COLORS.text.secondary,
+  },
+  ruleTextMet: {
+    color: COLORS.text.primary,
     fontWeight: '600',
   },
 
-  primaryBtn: {
-    marginTop: 6,
+  // Register Button
+  registerButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  registerButtonDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  registerButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  registerButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
-  legal: {
-    marginTop: 12,
-    fontSize: SIZES.small,
+  // Terms
+  termsText: {
+    fontSize: 12,
     color: COLORS.text.secondary,
     textAlign: 'center',
     lineHeight: 18,
   },
-
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 18,
+  termsLink: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
 
-  footerText: {
-    fontSize: SIZES.body,
+  // Footer
+  footer: {
+    marginTop: 'auto',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    fontSize: 14,
+    color: COLORS.text.light,
+    fontWeight: '500',
+  },
+  loginPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  loginText: {
+    fontSize: 15,
     color: COLORS.text.secondary,
   },
-
-  signInText: {
-    fontSize: SIZES.body,
+  loginLink: {
+    fontSize: 15,
+    fontWeight: '700',
     color: COLORS.primary,
-    fontWeight: '800',
   },
 });

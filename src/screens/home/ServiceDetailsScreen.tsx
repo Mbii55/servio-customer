@@ -11,13 +11,15 @@ import {
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  SafeAreaView,
   Share,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS, SIZES } from '../../constants/colors';
 import { getServiceById } from '../../services/services';
@@ -32,7 +34,7 @@ type Params = { serviceId: string };
 type NavProp = NativeStackNavigationProp<HomeStackParamList>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_HEIGHT = 280;
+const HERO_HEIGHT = 320;
 
 export const ServiceDetailsScreen: React.FC = () => {
   const route = useRoute<RouteProp<Record<string, Params>, string>>();
@@ -78,22 +80,21 @@ export const ServiceDetailsScreen: React.FC = () => {
   };
 
   useEffect(() => {
-  const loadFav = async () => {
-    if (!isAuthenticated) {
-      setIsFavorite(false);
-      return;
-    }
-    try {
-      const s = await getFavoriteStatus(serviceId);
-      setIsFavorite(!!s.is_favorite);
-    } catch {
-      // ignore status errors
-    }
-  };
+    const loadFav = async () => {
+      if (!isAuthenticated) {
+        setIsFavorite(false);
+        return;
+      }
+      try {
+        const s = await getFavoriteStatus(serviceId);
+        setIsFavorite(!!s.is_favorite);
+      } catch {
+        // ignore status errors
+      }
+    };
 
-  loadFav();
-}, [isAuthenticated, serviceId]);
-
+    loadFav();
+  }, [isAuthenticated, serviceId]);
 
   const loadAddons = async (serviceId: string): Promise<ServiceAddon[]> => {
     try {
@@ -115,28 +116,27 @@ export const ServiceDetailsScreen: React.FC = () => {
 
   const priceText = useMemo(() => {
     const v = Number(service?.base_price ?? 0);
-    if (Number.isFinite(v)) return `QAR ${v.toFixed(2)}`;
-    return `QAR ${service?.base_price ?? ''}`;
+    if (Number.isFinite(v)) return `${v.toFixed(0)}`;
+    return `${service?.base_price ?? ''}`;
   }, [service?.base_price]);
 
   const activeAddons = useMemo(() => {
     return addons.filter((a) => a.is_active);
   }, [addons]);
 
-    const onBookPress = () => {
+  const onBookPress = () => {
     if (!isAuthenticated) {
-        setShowAuthModal(true);
-        return;
+      setShowAuthModal(true);
+      return;
     }
     
-    // Navigate to BookService screen
     navigation.navigate('BookService', { serviceId });
-    };
+  };
 
   const onSharePress = async () => {
     try {
       await Share.share({
-        message: `Check out ${service?.title} on Servio!\n\nPrice: ${priceText}`,
+        message: `Check out ${service?.title} on Servio!\n\nPrice: QAR ${priceText}`,
         title: service?.title,
       });
     } catch (error) {
@@ -145,24 +145,22 @@ export const ServiceDetailsScreen: React.FC = () => {
   };
 
   const onFavoritePress = async () => {
-  if (!isAuthenticated) {
-    setShowAuthModal(true);
-    return;
-  }
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
 
-  // optimistic UI
-  const prev = isFavorite;
-  setIsFavorite(!prev);
+    const prev = isFavorite;
+    setIsFavorite(!prev);
 
-  try {
-    const r = await toggleFavorite(serviceId);
-    setIsFavorite(r.is_favorite);
-  } catch (e: any) {
-    setIsFavorite(prev);
-    Alert.alert('Error', e?.message || 'Failed to update favorite');
-  }
-};
-
+    try {
+      const r = await toggleFavorite(serviceId);
+      setIsFavorite(r.is_favorite);
+    } catch (e: any) {
+      setIsFavorite(prev);
+      Alert.alert('Error', e?.message || 'Failed to update favorite');
+    }
+  };
 
   const onGalleryScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
@@ -177,28 +175,45 @@ export const ServiceDetailsScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading service...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading service...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (err || !service) {
     return (
-      <View style={styles.center}>
-        <Ionicons name="alert-circle-outline" size={64} color={COLORS.danger} />
-        <Text style={styles.errorText}>{err ?? 'Service not found'}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadServiceData}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <LinearGradient
+            colors={['#FEF2F2', '#FEE2E2']}
+            style={styles.errorIconContainer}
+          >
+            <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
+          </LinearGradient>
+          <Text style={styles.errorTitle}>{err ?? 'Service not found'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadServiceData}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.retryButtonGradient}
+            >
+              <Ionicons name="refresh" size={18} color="#FFF" />
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
-const provider = service.provider;
-const providerId = service.provider_id;
-const bp = provider?.business_profile ?? null;
+  const provider = service.provider;
+  const providerId = service.provider_id;
+  const bp = provider?.business_profile ?? null;
 
   const shopName =
     bp?.business_name ||
@@ -212,29 +227,35 @@ const bp = provider?.business_profile ?? null;
   const shopLocation = [bp?.city, bp?.country].filter(Boolean).join(', ');
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header Actions */}
-      <View style={styles.headerActions}>
-        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerButton} onPress={onSharePress}>
-            <Ionicons name="share-outline" size={24} color={COLORS.text.primary} />
+    <View style={styles.container}>
+      {/* Floating Header */}
+      <SafeAreaView style={styles.headerSafe}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton} onPress={onFavoritePress}>
-            <Ionicons
-              name={isFavorite ? 'heart' : 'heart-outline'}
-              size={24}
-              color={isFavorite ? COLORS.danger : COLORS.text.primary}
-            />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerButton} onPress={onSharePress}>
+              <Ionicons name="share-outline" size={22} color={COLORS.text.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerButton} onPress={onFavoritePress}>
+              <Ionicons
+                name={isFavorite ? 'heart' : 'heart-outline'}
+                size={22}
+                color={isFavorite ? '#EF4444' : COLORS.text.primary}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
         {/* Image Gallery */}
-        <View style={styles.hero}>
+        <View style={styles.heroContainer}>
           {hasImages ? (
             <>
               <ScrollView
@@ -243,12 +264,12 @@ const bp = provider?.business_profile ?? null;
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
                 onMomentumScrollEnd={onGalleryScrollEnd}
-                style={{ width: '100%', height: HERO_HEIGHT }}
+                style={styles.gallery}
               >
                 {images.map((uri, idx) => {
                   const failed = !!failedImages[idx];
                   return (
-                    <View key={`${uri}-${idx}`} style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }}>
+                    <View key={`${uri}-${idx}`} style={styles.imageSlide}>
                       {!failed ? (
                         <Image
                           source={{ uri }}
@@ -257,174 +278,230 @@ const bp = provider?.business_profile ?? null;
                           onError={() => setFailedImages((prev) => ({ ...prev, [idx]: true }))}
                         />
                       ) : (
-                        <View style={styles.heroFallback}>
+                        <LinearGradient
+                          colors={['#F9FAFB', '#F3F4F6']}
+                          style={styles.imageFallback}
+                        >
                           <Ionicons name="image-outline" size={48} color={COLORS.text.light} />
-                          <Text style={styles.fallbackText}>Image not available</Text>
-                        </View>
+                        </LinearGradient>
                       )}
                     </View>
                   );
                 })}
               </ScrollView>
 
-              {/* Pagination Dots */}
               {images.length > 1 && (
-                <View style={styles.dots}>
+                <View style={styles.pagination}>
                   {images.map((_, idx) => (
                     <TouchableOpacity
                       key={idx}
                       onPress={() => goToImage(idx)}
                       activeOpacity={0.7}
-                      style={[
-                        styles.dot,
-                        idx === activeIndex ? styles.dotActive : styles.dotInactive,
-                      ]}
-                    />
+                    >
+                      <View style={[
+                        styles.paginationDot,
+                        idx === activeIndex && styles.paginationDotActive,
+                      ]} />
+                    </TouchableOpacity>
                   ))}
                 </View>
               )}
             </>
           ) : (
-            <View style={styles.heroFallback}>
-              <Ionicons name="image-outline" size={48} color={COLORS.text.light} />
-              <Text style={styles.fallbackText}>No images available</Text>
-            </View>
+            <LinearGradient
+              colors={['#F9FAFB', '#F3F4F6']}
+              style={styles.imageFallback}
+            >
+              <Ionicons name="image-outline" size={64} color={COLORS.text.light} />
+              <Text style={styles.noImageText}>No images available</Text>
+            </LinearGradient>
           )}
         </View>
 
         {/* Content */}
         <View style={styles.content}>
-          {/* Title & Price */}
-          <Text style={styles.title}>{service.title}</Text>
-          <Text style={styles.price}>{priceText}</Text>
-
-          {/* Meta Info */}
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <Ionicons name="time-outline" size={18} color={COLORS.text.secondary} />
-              <Text style={styles.metaText}>
-                {service.duration_minutes ? `${service.duration_minutes} min` : 'Flexible'}
-              </Text>
+          {/* Title & Price Card */}
+          <View style={styles.titleCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>{service.title}</Text>
+              <View style={styles.priceContainer}>
+                <Text style={styles.priceLabel}>Starting from</Text>
+                <View style={styles.priceRow}>
+                  <Text style={styles.price}>QAR {priceText}</Text>
+                  <View style={styles.priceBadge}>
+                    <Ionicons name="cash" size={14} color="#10B981" />
+                    <Text style={styles.priceBadgeText}>Cash</Text>
+                  </View>
+                </View>
+              </View>
             </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="cash-outline" size={18} color={COLORS.text.secondary} />
-              <Text style={styles.metaText}>Cash Payment</Text>
+          </View>
+
+          {/* Quick Info */}
+          <View style={styles.quickInfoCard}>
+            <View style={styles.quickInfoItem}>
+              <View style={styles.quickInfoIcon}>
+                <Ionicons name="time" size={18} color={COLORS.primary} />
+              </View>
+              <View>
+                <Text style={styles.quickInfoLabel}>Duration</Text>
+                <Text style={styles.quickInfoValue}>
+                  {service.duration_minutes ? `${service.duration_minutes} min` : 'Flexible'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.quickInfoDivider} />
+
+            <View style={styles.quickInfoItem}>
+              <View style={styles.quickInfoIcon}>
+                <Ionicons name="location" size={18} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={styles.quickInfoLabel}>Location</Text>
+                <Text style={styles.quickInfoValue}>At your place</Text>
+              </View>
             </View>
           </View>
 
           {/* Description */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.desc}>{service.description}</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="document-text" size={20} color={COLORS.text.primary} />
+              <Text style={styles.sectionTitle}>Description</Text>
+            </View>
+            <Text style={styles.description}>{service.description}</Text>
           </View>
 
           {/* Add-ons */}
           {activeAddons.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Available Add-ons</Text>
-              {activeAddons.map((addon) => (
-                <View key={addon.id} style={styles.addonCard}>
-                  <View style={styles.addonInfo}>
-                    <Text style={styles.addonName}>{addon.name}</Text>
-                    {addon.description && (
-                      <Text style={styles.addonDesc}>{addon.description}</Text>
-                    )}
+              <View style={styles.sectionHeader}>
+                <Ionicons name="add-circle" size={20} color="#10B981" />
+                <Text style={styles.sectionTitle}>Available Add-ons</Text>
+              </View>
+              <View style={styles.addonsList}>
+                {activeAddons.map((addon) => (
+                  <View key={addon.id} style={styles.addonCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.addonName}>{addon.name}</Text>
+                      {addon.description && (
+                        <Text style={styles.addonDescription}>{addon.description}</Text>
+                      )}
+                    </View>
+                    <View style={styles.addonPriceContainer}>
+                      <Text style={styles.addonPriceLabel}>+QAR</Text>
+                      <Text style={styles.addonPrice}>{Number(addon.price).toFixed(0)}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.addonPrice}>+QAR {Number(addon.price).toFixed(2)}</Text>
-                </View>
-              ))}
+                ))}
+              </View>
             </View>
           )}
 
-          {/* Provider Card */}
+          {/* Provider */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Service Provider</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="storefront" size={20} color={COLORS.text.primary} />
+              <Text style={styles.sectionTitle}>Service Provider</Text>
+            </View>
+
             {provider ? (
               <View style={styles.providerCard}>
                 <View style={styles.providerHeader}>
-                  <View style={styles.providerRow}>
-                    {shopLogo ? (
-                      <Image source={{ uri: shopLogo }} style={styles.providerLogo} resizeMode="cover" />
-                    ) : (
-                      <View style={styles.providerLogoFallback}>
-                        <Ionicons name="storefront-outline" size={24} color={COLORS.text.light} />
+                  {shopLogo ? (
+                    <Image source={{ uri: shopLogo }} style={styles.providerAvatar} />
+                  ) : (
+                    <LinearGradient
+                      colors={[COLORS.primary, COLORS.secondary]}
+                      style={styles.providerAvatarPlaceholder}
+                    >
+                      <Text style={styles.providerAvatarText}>
+                        {shopName.charAt(0).toUpperCase()}
+                      </Text>
+                    </LinearGradient>
+                  )}
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.providerName}>{shopName}</Text>
+                    {shopLocation && (
+                      <View style={styles.providerLocation}>
+                        <Ionicons name="location" size={12} color={COLORS.text.secondary} />
+                        <Text style={styles.providerLocationText}>{shopLocation}</Text>
                       </View>
                     )}
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.providerName}>{shopName}</Text>
-                      {shopLocation && (
-                        <View style={styles.providerLocationRow}>
-                          <Ionicons name="location-outline" size={14} color={COLORS.text.secondary} />
-                          <Text style={styles.providerLocation}>{shopLocation}</Text>
-                        </View>
-                      )}
-                    </View>
                   </View>
-
-                  {/* Rating Placeholder */}
-                  {/* <View style={styles.ratingRow}>
-                    <Ionicons name="star" size={16} color={COLORS.warning} />
-                    <Text style={styles.ratingText}>4.8</Text>
-                    <Text style={styles.ratingCount}>(124 reviews)</Text>
-                  </View> */}
                 </View>
 
-                {shopDesc && <Text style={styles.providerDesc}>{shopDesc}</Text>}
+                {shopDesc && (
+                  <Text style={styles.providerDescription}>{shopDesc}</Text>
+                )}
 
-                {/* Contact Info */}
                 {(shopPhone || shopEmail) && (
-                  <View style={styles.contactSection}>
+                  <View style={styles.contactInfo}>
                     {shopPhone && (
-                      <View style={styles.contactRow}>
-                        <Ionicons name="call-outline" size={16} color={COLORS.text.secondary} />
+                      <View style={styles.contactItem}>
+                        <Ionicons name="call" size={14} color="#10B981" />
                         <Text style={styles.contactText}>{shopPhone}</Text>
                       </View>
                     )}
                     {shopEmail && (
-                      <View style={styles.contactRow}>
-                        <Ionicons name="mail-outline" size={16} color={COLORS.text.secondary} />
+                      <View style={styles.contactItem}>
+                        <Ionicons name="mail" size={14} color="#10B981" />
                         <Text style={styles.contactText}>{shopEmail}</Text>
                       </View>
                     )}
                   </View>
                 )}
 
-<TouchableOpacity
-  style={styles.viewShopButton}
-  onPress={() => {
-    if (providerId) {
-      navigation.navigate('ProviderDetails', { providerId });
-    } else {
-      Alert.alert('Error', 'Provider information not available');
-    }
-  }}
-  activeOpacity={0.7}
->
-  <Text style={styles.viewShopButtonText}>View Shop Profile</Text>
-  <Ionicons name="arrow-forward" size={16} color={COLORS.primary} />
-</TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.viewProfileButton}
+                  onPress={() => {
+                    if (providerId) {
+                      navigation.navigate('ProviderDetails', { providerId });
+                    } else {
+                      Alert.alert('Error', 'Provider information not available');
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewProfileText}>View Full Profile</Text>
+                  <Ionicons name="arrow-forward" size={16} color={COLORS.primary} />
+                </TouchableOpacity>
               </View>
             ) : (
               <Text style={styles.providerUnavailable}>Provider information not available</Text>
             )}
           </View>
-
-          {/* Bottom Spacing */}
-          <View style={{ height: 100 }} />
         </View>
       </ScrollView>
 
-      {/* Sticky Bottom CTA */}
-      <View style={styles.bottomBar}>
-        <View style={styles.priceInfo}>
-          <Text style={styles.bottomPriceLabel}>Total Price</Text>
-          <Text style={styles.bottomPrice}>{priceText}</Text>
-        </View>
-        <TouchableOpacity style={styles.bookButton} onPress={onBookPress} activeOpacity={0.85}>
-          <Text style={styles.bookButtonText}>Book Now</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Fixed Bottom CTA */}
+ {/* Fixed Bottom CTA */}
+<View style={styles.bottomSafe}>
+  <View style={styles.bottomContainer}>
+    <View style={styles.bottomPriceInfo}>
+      <Text style={styles.bottomPriceLabel}>Total</Text>
+      <Text style={styles.bottomPrice}>QAR {priceText}</Text>
+    </View>
+    
+    <TouchableOpacity 
+      style={styles.bookButton} 
+      onPress={onBookPress}
+      activeOpacity={0.8}
+    >
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.secondary]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.bookButtonGradient}
+      >
+        <Text style={styles.bookButtonText}>Book Now</Text>
+        <Ionicons name="arrow-forward" size={20} color="#FFF" />
+      </LinearGradient>
+    </TouchableOpacity>
+  </View>
+</View>
 
       {/* Auth Modal */}
       <AuthModal
@@ -432,337 +509,459 @@ const bp = provider?.business_profile ?? null;
         onClose={() => setShowAuthModal(false)}
         initialMode="login"
       />
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: '#F9FAFB',
   },
-  scrollView: {
+
+  // Loading & Error
+  loadingContainer: {
     flex: 1,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background.secondary,
-    padding: SIZES.padding * 2,
+    justifyContent: 'center',
+    gap: 12,
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: SIZES.body,
+    fontSize: 14,
     color: COLORS.text.secondary,
   },
-  errorText: {
-    marginTop: 16,
-    fontSize: SIZES.body,
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  errorIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
     color: COLORS.danger,
     textAlign: 'center',
+    marginBottom: 24,
   },
   retryButton: {
-    marginTop: 24,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: SIZES.radius,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  retryButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    gap: 8,
   },
   retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: SIZES.body,
-    fontWeight: '600',
   },
 
   // Header
-  headerActions: {
+  headerSafe: {
     position: 'absolute',
-    top: 50,
+    top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding,
     zIndex: 10,
   },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  headerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  headerRight: {
+  headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
 
-  // Hero
-  hero: {
+  // Scroll
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 180 : 140,
+  },
+
+  // Hero Gallery
+  heroContainer: {
     height: HERO_HEIGHT,
-    backgroundColor: COLORS.background.tertiary,
+    backgroundColor: '#F3F4F6',
+  },
+  gallery: {
+    width: '100%',
+    height: HERO_HEIGHT,
+  },
+  imageSlide: {
+    width: SCREEN_WIDTH,
+    height: HERO_HEIGHT,
   },
   heroImage: {
     width: '100%',
     height: '100%',
   },
-  heroFallback: {
-    height: HERO_HEIGHT,
-    justifyContent: 'center',
+  imageFallback: {
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 12,
   },
-  fallbackText: {
+  noImageText: {
+    fontSize: 14,
     color: COLORS.text.secondary,
-    fontSize: SIZES.small,
   },
-
-  // Dots
-  dots: {
+  pagination: {
     position: 'absolute',
     bottom: 16,
-    width: '100%',
+    left: 0,
+    right: 0,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
-  dot: {
+  paginationDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
-  dotActive: {
+  paginationDotActive: {
+    width: 24,
     backgroundColor: '#FFFFFF',
-  },
-  dotInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
   },
 
   // Content
   content: {
-    padding: SIZES.padding,
+    padding: 20,
+  },
+
+  // Title Card
+  titleCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
   title: {
-    fontSize: SIZES.h2,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-    lineHeight: 32,
-  },
-  price: {
-    marginTop: 8,
-    fontSize: SIZES.h3,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-  },
-
-  // Meta
-  metaRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 16,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  metaText: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-  },
-
-  // Sections
-  section: {
-    marginTop: 24,
-  },
-  sectionTitle: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '800',
     color: COLORS.text.primary,
     marginBottom: 12,
+    lineHeight: 32,
   },
-  desc: {
-    fontSize: SIZES.body,
+  priceContainer: {
+    gap: 6,
+  },
+  priceLabel: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  price: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  priceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 4,
+  },
+  priceBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+
+  // Quick Info
+  quickInfoCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  quickInfoItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  quickInfoIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickInfoLabel: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    marginBottom: 2,
+  },
+  quickInfoValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  quickInfoDivider: {
+    width: 1,
+    backgroundColor: '#E5E7EB',
+    marginHorizontal: 16,
+  },
+
+  // Section
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  description: {
+    fontSize: 15,
     color: COLORS.text.secondary,
     lineHeight: 24,
   },
 
-  // Add-ons
+  // Addons
+  addonsList: {
+    gap: 12,
+  },
   addonCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: COLORS.background.secondary,
-    padding: 12,
-    borderRadius: SIZES.radius,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  addonInfo: {
-    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   addonName: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: COLORS.text.primary,
+    marginBottom: 4,
   },
-  addonDesc: {
-    fontSize: SIZES.small,
+  addonDescription: {
+    fontSize: 13,
     color: COLORS.text.secondary,
-    marginTop: 2,
+    lineHeight: 18,
+  },
+  addonPriceContainer: {
+    alignItems: 'flex-end',
+  },
+  addonPriceLabel: {
+    fontSize: 11,
+    color: COLORS.text.secondary,
+    marginBottom: 2,
   },
   addonPrice: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '800',
     color: COLORS.primary,
-    marginLeft: 12,
   },
 
-  // Provider Card
+  // Provider
   providerCard: {
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: SIZES.radius,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   providerHeader: {
-    marginBottom: 12,
-  },
-  providerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 8,
+    marginBottom: 20,
   },
-  providerLogo: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  providerAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
-  providerLogoFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: COLORS.background.tertiary,
-    justifyContent: 'center',
+  providerAvatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerAvatarText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   providerName: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.text.primary,
-  },
-  providerLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
+    marginBottom: 4,
   },
   providerLocation: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-  },
-  ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  ratingText: {
-    fontSize: SIZES.small,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-  },
-  ratingCount: {
-    fontSize: SIZES.small,
+  providerLocationText: {
+    fontSize: 13,
     color: COLORS.text.secondary,
   },
-  providerDesc: {
-    fontSize: SIZES.body,
+  providerDescription: {
+    fontSize: 14,
     color: COLORS.text.secondary,
-    lineHeight: 22,
+    lineHeight: 20,
     marginBottom: 12,
   },
-  contactSection: {
+  contactInfo: {
     gap: 8,
-    marginBottom: 12,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    marginBottom: 15,
   },
-  contactRow: {
+  contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   contactText: {
-    fontSize: SIZES.small,
+    fontSize: 13,
     color: COLORS.text.secondary,
   },
-  viewShopButton: {
+  viewProfileButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    backgroundColor: '#EFF6FF',
     paddingVertical: 12,
-    borderRadius: SIZES.radius,
-    backgroundColor: COLORS.background.primary,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderRadius: 12,
+    gap: 6,
   },
-  viewShopButtonText: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
+  viewProfileText: {
+    fontSize: 14,
+    fontWeight: '700',
     color: COLORS.primary,
   },
   providerUnavailable: {
-    fontSize: SIZES.body,
+    fontSize: 14,
     color: COLORS.text.secondary,
     fontStyle: 'italic',
   },
 
-  // Bottom Bar
-  bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding,
-    paddingVertical: 12,
-    backgroundColor: COLORS.background.primary,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  priceInfo: {
-    flex: 1,
-  },
-  bottomPriceLabel: {
-    fontSize: SIZES.small,
-    color: COLORS.text.secondary,
-  },
-  bottomPrice: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-  },
-  bookButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: SIZES.radius,
-  },
-  bookButtonText: {
-    fontSize: SIZES.body,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
+  // Bottom CTA
+// Bottom CTA
+bottomSafe: {
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  backgroundColor: '#FFFFFF',
+  borderTopWidth: 1,
+  borderTopColor: '#E5E7EB',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: -4 },
+  shadowOpacity: 0.1,
+  shadowRadius: 8,
+  elevation: 10,
+},
+bottomContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 16,
+  paddingTop: 16,
+  paddingBottom: Platform.OS === 'ios' ? 100 : 100, // Accounts for tab bar + safe area
+  gap: 16,
+},
+bottomPriceInfo: {
+  flex: 1,
+},
+bottomPriceLabel: {
+  fontSize: 12,
+  color: COLORS.text.secondary,
+  marginBottom: 2,
+},
+bottomPrice: {
+  fontSize: 24,
+  fontWeight: '800',
+  color: COLORS.text.primary,
+},
+bookButton: {
+  borderRadius: 16,
+  overflow: 'hidden',
+  shadowColor: COLORS.primary,
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.3,
+  shadowRadius: 8,
+  elevation: 5,
+},
+bookButtonGradient: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 32,
+  paddingVertical: 16,
+  gap: 8,
+},
+bookButtonText: {
+  fontSize: 16,
+  fontWeight: '700',
+  color: '#FFFFFF',
+},
 });

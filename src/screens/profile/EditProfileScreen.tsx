@@ -9,9 +9,14 @@ import {
   Alert,
   Image,
   StyleSheet,
+  ScrollView,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { COLORS, SIZES } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
@@ -35,8 +40,11 @@ export const EditProfileScreen: React.FC<any> = ({ navigation }) => {
     return localImageUri || remoteImageUrl || null;
   }, [localImageUri, remoteImageUrl]);
 
+  const initials = useMemo(() => {
+    return `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase() || 'U';
+  }, [firstName, lastName]);
+
   useEffect(() => {
-    // If user changes (logout/login), refresh local state
     setFirstName(user?.first_name ?? '');
     setLastName(user?.last_name ?? '');
     setPhone(user?.phone ?? '');
@@ -47,7 +55,7 @@ export const EditProfileScreen: React.FC<any> = ({ navigation }) => {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access to pick an image.');
+      Alert.alert('Permission Required', 'Please allow photo library access to pick an image.');
       return;
     }
 
@@ -72,13 +80,12 @@ export const EditProfileScreen: React.FC<any> = ({ navigation }) => {
     setUploading(true);
     try {
       const uploaded = await uploadSingleImage(localImageUri);
-      // Expecting backend returns { url, public_id }
       setRemoteImageUrl(uploaded.url);
       setLocalImageUri(null);
       return uploaded.url;
     } catch (e: any) {
       Alert.alert(
-        'Upload failed',
+        'Upload Failed',
         e?.response?.data?.message || e?.response?.data?.error || e?.message || 'Could not upload image.'
       );
       return null;
@@ -89,21 +96,23 @@ export const EditProfileScreen: React.FC<any> = ({ navigation }) => {
 
   const onSave = async () => {
     if (!user) {
-      Alert.alert('Not logged in', 'Please login again.');
+      Alert.alert('Not Logged In', 'Please login again.');
+      return;
+    }
+
+    if (!firstName.trim() || !lastName.trim()) {
+      Alert.alert('Required Fields', 'Please enter your first and last name.');
       return;
     }
 
     setSaving(true);
     try {
-      // 1) upload image (if user picked new one)
       const finalImageUrl = await uploadAvatarIfNeeded();
       if (localImageUri && !finalImageUrl) {
-        // user picked image but upload failed
         setSaving(false);
         return;
       }
 
-      // 2) update profile on backend
       const updatedUser = await updateMe({
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -111,14 +120,12 @@ export const EditProfileScreen: React.FC<any> = ({ navigation }) => {
         profile_image: finalImageUrl ?? null,
       });
 
-      // 3) update locally (IMPORTANT)
-      // If your AuthContext already exposes a setter like setUser/updateUser, use it.
-      // If not, simplest approach: navigate back and rely on re-fetch (/auth/me) OR add updateUser() to context.
-      Alert.alert('Saved', 'Your profile has been updated.');
-      navigation.goBack();
+      Alert.alert('Success', 'Your profile has been updated.', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
     } catch (e: any) {
       Alert.alert(
-        'Save failed',
+        'Save Failed',
         e?.response?.data?.message || e?.response?.data?.error || e?.message || 'Could not update profile.'
       );
     } finally {
@@ -126,143 +133,450 @@ export const EditProfileScreen: React.FC<any> = ({ navigation }) => {
     }
   };
 
+  const hasChanges = useMemo(() => {
+    return (
+      firstName !== (user?.first_name ?? '') ||
+      lastName !== (user?.last_name ?? '') ||
+      phone !== (user?.phone ?? '') ||
+      localImageUri !== null
+    );
+  }, [firstName, lastName, phone, localImageUri, user]);
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Edit Profile</Text>
-
-      {/* Avatar */}
-      <View style={styles.avatarWrap}>
-        <View style={styles.avatarCircle}>
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
-          ) : (
-            <Ionicons name="person-outline" size={34} color={COLORS.text.light} />
-          )}
-        </View>
-
-        <TouchableOpacity style={styles.avatarBtn} onPress={pickImage} activeOpacity={0.85}>
-          <Ionicons name="image-outline" size={18} color={COLORS.primary} />
-          <Text style={styles.avatarBtnText}>Change photo</Text>
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()} 
+          style={styles.headerButton}
+        >
+          <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
         </TouchableOpacity>
-
-        {uploading ? (
-          <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <ActivityIndicator color={COLORS.primary} />
-            <Text style={{ color: COLORS.text.secondary }}>Uploading...</Text>
-          </View>
-        ) : null}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Edit Profile</Text>
+          <Text style={styles.headerSubtitle}>Update your information</Text>
+        </View>
       </View>
 
-      {/* Inputs */}
-      <Text style={styles.label}>First Name</Text>
-      <TextInput value={firstName} onChangeText={setFirstName} style={styles.input} />
-
-      <Text style={styles.label}>Last Name</Text>
-      <TextInput value={lastName} onChangeText={setLastName} style={styles.input} />
-
-      <Text style={styles.label}>Phone</Text>
-      <TextInput
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        style={styles.input}
-      />
-
-      <TouchableOpacity
-        style={[styles.saveBtn, (saving || uploading) && { opacity: 0.7 }]}
-        onPress={onSave}
-        disabled={saving || uploading}
-        activeOpacity={0.85}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        {saving ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.saveBtnText}>Save</Text>
-        )}
-      </TouchableOpacity>
-    </View>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Avatar Section */}
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarContainer}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              ) : (
+                <LinearGradient
+                  colors={[COLORS.primary, COLORS.secondary]}
+                  style={styles.avatarPlaceholder}
+                >
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </LinearGradient>
+              )}
+
+              {/* Upload Overlay */}
+              <TouchableOpacity
+                style={styles.avatarOverlay}
+                onPress={pickImage}
+                activeOpacity={0.8}
+                disabled={uploading}
+              >
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.6)']}
+                  style={styles.avatarOverlayGradient}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <Ionicons name="camera" size={24} color="#FFF" />
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.avatarLabel}>Profile Photo</Text>
+            {uploading && (
+              <Text style={styles.uploadingText}>Uploading...</Text>
+            )}
+            {localImageUri && !uploading && (
+              <View style={styles.changeIndicator}>
+                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                <Text style={styles.changeIndicatorText}>New photo selected</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Form Fields */}
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>Personal Information</Text>
+
+            {/* First Name */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>First Name</Text>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="person" size={18} color={COLORS.primary} />
+                </View>
+                <TextInput
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  style={styles.input}
+                  placeholder="Enter first name"
+                  placeholderTextColor={COLORS.text.light}
+                />
+              </View>
+            </View>
+
+            {/* Last Name */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Last Name</Text>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="person" size={18} color={COLORS.primary} />
+                </View>
+                <TextInput
+                  value={lastName}
+                  onChangeText={setLastName}
+                  style={styles.input}
+                  placeholder="Enter last name"
+                  placeholderTextColor={COLORS.text.light}
+                />
+              </View>
+            </View>
+
+            {/* Email (Read-only) */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <View style={[styles.inputContainer, styles.inputDisabled]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="mail" size={18} color={COLORS.text.light} />
+                </View>
+                <TextInput
+                  value={user?.email ?? ''}
+                  style={[styles.input, { color: COLORS.text.light }]}
+                  editable={false}
+                />
+                <View style={styles.lockedBadge}>
+                  <Ionicons name="lock-closed" size={12} color={COLORS.text.light} />
+                </View>
+              </View>
+              <Text style={styles.inputHint}>Email cannot be changed</Text>
+            </View>
+
+            {/* Phone */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="call" size={18} color={COLORS.primary} />
+                </View>
+                <TextInput
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  style={styles.input}
+                  placeholder="Enter phone number"
+                  placeholderTextColor={COLORS.text.light}
+                />
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Bottom Actions */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.saveButton, (!hasChanges || saving || uploading) && styles.saveButtonDisabled]}
+          onPress={onSave}
+          disabled={!hasChanges || saving || uploading}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={(!hasChanges || saving || uploading) 
+              ? ['#9CA3AF', '#6B7280'] 
+              : [COLORS.primary, COLORS.secondary]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.saveButtonGradient}
+          >
+            {saving ? (
+              <>
+                <ActivityIndicator size="small" color="#FFF" />
+                <Text style={styles.saveButtonText}>Saving...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={20} color="#FFF" />
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              </>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
-// Full screen stylesheet (same file, as you requested)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background.primary,
-    padding: SIZES.padding,
-  },
-  header: {
-    fontSize: SIZES.h3,
-    fontWeight: '800',
-    color: COLORS.text.primary,
-    marginBottom: 18,
+    backgroundColor: '#F9FAFB',
   },
 
-  avatarWrap: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  avatarCircle: {
-    width: 92,
-    height: 92,
-    borderRadius: 999,
-    backgroundColor: COLORS.background.tertiary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  avatarImg: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarBtn: {
-    marginTop: 10,
+  // Header
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.background.secondary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
   },
-  avatarBtnText: {
-    color: COLORS.primary,
+  headerButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
     fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginTop: 2,
   },
 
-  label: {
-    marginTop: 10,
-    marginBottom: 6,
-    color: COLORS.text.secondary,
-    fontSize: SIZES.small,
+  // Content
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 180 : 150,
+  },
+
+  // Avatar Section
+  avatarSection: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  avatarImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  avatarPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  avatarText: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  avatarOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 50,
+    borderBottomLeftRadius: 60,
+    borderBottomRightRadius: 60,
+    overflow: 'hidden',
+  },
+  avatarOverlayGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLabel: {
+    fontSize: 16,
     fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  uploadingText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  changeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  changeIndicatorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+
+  // Form Section
+  formSection: {
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 16,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  inputDisabled: {
+    backgroundColor: '#F9FAFB',
+  },
+  inputIcon: {
+    width: 48,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
   },
   input: {
-    height: SIZES.inputHeight,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SIZES.radius,
-    paddingHorizontal: 12,
-    fontSize: SIZES.body,
+    flex: 1,
+    fontSize: 15,
     color: COLORS.text.primary,
-    backgroundColor: COLORS.background.secondary,
+    paddingVertical: 16,
+    paddingRight: 16,
+  },
+  lockedBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  inputHint: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    marginTop: 6,
+    marginLeft: 4,
   },
 
-  saveBtn: {
-    marginTop: 18,
-    height: SIZES.buttonHeight,
-    borderRadius: SIZES.radius,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
+  // Bottom Bar
+bottomBar: {
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  flexDirection: 'row',
+  paddingHorizontal: 16,
+  paddingTop: 16,
+  paddingBottom: Platform.OS === 'ios' ? 110 : 90, // Account for tab bar height
+  backgroundColor: '#FFFFFF',
+  borderTopWidth: 1,
+  borderTopColor: '#F3F4F6',
+  gap: 12,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: -4 },
+  shadowOpacity: 0.1,
+  shadowRadius: 8,
+  elevation: 10,
+},
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: SIZES.body,
-    fontWeight: '800',
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  saveButton: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  saveButtonDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  saveButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  saveButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

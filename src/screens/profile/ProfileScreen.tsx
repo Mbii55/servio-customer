@@ -9,8 +9,10 @@ import {
   Alert,
   Image,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { AuthModal } from '../../components/auth/AuthModal';
 import { COLORS, SIZES } from '../../constants/colors';
@@ -48,27 +50,41 @@ export const ProfileScreen: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.guestWrap}>
-          <View style={styles.guestIcon}>
-            <Ionicons name="person-outline" size={30} color={COLORS.primary} />
-          </View>
+        <View style={styles.guestContainer}>
+          <LinearGradient
+            colors={['#EFF6FF', '#DBEAFE']}
+            style={styles.guestIconContainer}
+          >
+            <Ionicons name="person-outline" size={48} color={COLORS.primary} />
+          </LinearGradient>
 
-          <Text style={styles.guestTitle}>Sign in to continue</Text>
+          <Text style={styles.guestTitle}>Welcome to Servio</Text>
           <Text style={styles.guestSubtitle}>
-            Create an account to book services, save favorites, and track orders.
+            Sign in to book services, save favorites, and manage your bookings
           </Text>
 
           <TouchableOpacity
-            style={styles.primaryBtn}
+            style={styles.guestButton}
             onPress={() => setShowAuthModal(true)}
-            activeOpacity={0.9}
+            activeOpacity={0.8}
           >
-            <Text style={styles.primaryBtnText}>Sign In / Sign Up</Text>
-            <Ionicons name="arrow-forward" size={16} color="#fff" />
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.guestButtonGradient}
+            >
+              <Text style={styles.guestButtonText}>Sign In / Sign Up</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFF" />
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
-        <AuthModal visible={showAuthModal} onClose={() => setShowAuthModal(false)} initialMode="login" />
+        <AuthModal 
+          visible={showAuthModal} 
+          onClose={() => setShowAuthModal(false)} 
+          initialMode="login" 
+        />
       </SafeAreaView>
     );
   }
@@ -78,11 +94,18 @@ export const ProfileScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 18 }}>
-        {/* Header Card */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerTopRow}>
-            <View style={styles.avatarWrap}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <LinearGradient
+            colors={['#F9FAFB', '#FFFFFF']}
+            style={styles.profileHeaderGradient}
+          >
+            {/* Avatar */}
+            <View style={styles.avatarContainer}>
               {showAvatarImage ? (
                 <Image
                   source={{ uri: user!.profile_image! }}
@@ -91,298 +114,436 @@ export const ProfileScreen: React.FC = () => {
                   onError={() => setAvatarFailed(true)}
                 />
               ) : (
-                <Text style={styles.avatarText}>{initials || 'U'}</Text>
+                <LinearGradient
+                  colors={[COLORS.primary, COLORS.secondary]}
+                  style={styles.avatarPlaceholder}
+                >
+                  <Text style={styles.avatarText}>{initials || 'U'}</Text>
+                </LinearGradient>
               )}
 
-              {/* edit hint badge */}
-              <View style={styles.avatarBadge}>
-                <Ionicons name="camera-outline" size={14} color={COLORS.text.primary} />
-              </View>
+              {/* Edit Badge */}
+              <TouchableOpacity 
+                style={styles.editBadge}
+                onPress={() => navigation.navigate('EditProfile')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera" size={14} color="#FFF" />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.iconBtn}
+            {/* User Info */}
+            <Text style={styles.userName}>
+              {user?.first_name} {user?.last_name}
+            </Text>
+            <Text style={styles.userEmail}>{user?.email}</Text>
+
+            {/* Quick Stats */}
+            <View style={styles.quickStats}>
+              <QuickStat
+                icon="heart"
+                label="Favorites"
+                onPress={() => navigation.navigate('Favorites')}
+              />
+              <View style={styles.statDivider} />
+              <QuickStat
+                icon="calendar"
+                label="Bookings"
+                onPress={() => navigation.navigate('Bookings')}
+              />
+              <View style={styles.statDivider} />
+              <QuickStat
+                icon="location"
+                label="Addresses"
+                onPress={() => navigation.navigate('Addresses')}
+              />
+            </View>
+          </LinearGradient>
+        </View>
+
+        {/* Account Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <View style={styles.menuCard}>
+            <MenuItem
+              icon="person"
+              iconColor={COLORS.primary}
+              title="Edit Profile"
+              subtitle="Update your personal information"
               onPress={() => navigation.navigate('EditProfile')}
-              activeOpacity={0.9}
-            >
-              <Ionicons name="create-outline" size={18} color={COLORS.text.primary} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.name} numberOfLines={1}>
-            {user?.first_name} {user?.last_name}
-          </Text>
-          <Text style={styles.email} numberOfLines={1}>
-            {user?.email}
-          </Text>
-
-          {/* Quick Actions */}
-          <View style={styles.quickRow}>
-            <QuickAction
-              icon="heart-outline"
-              label="Favorites"
-              onPress={() => navigation.navigate('Favorites')}
             />
-            <QuickAction
-              icon="calendar-outline"
-              label="Bookings"
-              onPress={() => navigation.navigate('Bookings')}
-            />
-            <QuickAction
-              icon="location-outline"
-              label="Addresses"
+            <MenuDivider />
+            <MenuItem
+              icon="location"
+              iconColor="#F59E0B"
+              title="My Addresses"
+              subtitle="Manage your service locations"
               onPress={() => navigation.navigate('Addresses')}
             />
+            <MenuDivider />
+            <MenuItem
+              icon="heart"
+              iconColor="#EF4444"
+              title="Favorites"
+              subtitle="Your saved services & providers"
+              onPress={() => navigation.navigate('Favorites')}
+            />
+            <MenuDivider />
+            <MenuItem
+              icon="calendar"
+              iconColor="#8B5CF6"
+              title="My Bookings"
+              subtitle="View and manage your bookings"
+              onPress={() => navigation.navigate('Bookings')}
+            />
           </View>
         </View>
 
-        {/* Section: Account */}
-        <Text style={styles.sectionLabel}>Account</Text>
-        <View style={styles.groupCard}>
-          <MenuRow icon="person-outline" title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
-          <Divider />
-          <MenuRow icon="location-outline" title="My Addresses" onPress={() => navigation.navigate('Addresses')} />
-          <Divider />
-          <MenuRow icon="heart-outline" title="Favorites" onPress={() => navigation.navigate('Favorites')} />
-          <Divider />
-          <MenuRow icon="calendar-outline" title="My Bookings" onPress={() => navigation.navigate('Bookings')} />
+        {/* Support Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Support & Settings</Text>
+          <View style={styles.menuCard}>
+            <MenuItem
+              icon="help-circle"
+              iconColor="#10B981"
+              title="Help & Support"
+              subtitle="Get help with your account"
+              onPress={() => {
+                Alert.alert('Help & Support', 'Coming soon!');
+              }}
+            />
+            <MenuDivider />
+            <MenuItem
+              icon="settings"
+              iconColor="#6B7280"
+              title="Settings"
+              subtitle="App preferences and settings"
+              onPress={() => {
+                Alert.alert('Settings', 'Coming soon!');
+              }}
+            />
+          </View>
         </View>
 
-        {/* Section: Support */}
-        <Text style={styles.sectionLabel}>Support</Text>
-        <View style={styles.groupCard}>
-          <MenuRow icon="help-circle-outline" title="Help & Support" onPress={() => {}} />
-          <Divider />
-          <MenuRow icon="settings-outline" title="Settings" onPress={() => {}} />
-        </View>
-
-        {/* Danger */}
-        <View style={[styles.groupCard, { marginTop: 14 }]}>
-          <MenuRow
-            icon="log-out-outline"
-            title="Sign Out"
+        {/* Sign Out */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.signOutButton}
             onPress={handleSignOut}
-            destructive
-          />
+            activeOpacity={0.7}
+          >
+            <View style={styles.signOutContent}>
+              <Ionicons name="log-out" size={20} color={COLORS.danger} />
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </View>
+          </TouchableOpacity>
         </View>
+
+        {/* App Version */}
+        <Text style={styles.versionText}>Version 1.0.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-const QuickAction: React.FC<{
+// Quick Stat Component
+const QuickStat: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
 }> = ({ icon, label, onPress }) => {
   return (
-    <TouchableOpacity style={styles.quickItem} onPress={onPress} activeOpacity={0.9}>
-      <View style={styles.quickIcon}>
+    <TouchableOpacity 
+      style={styles.quickStatItem} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.quickStatIcon}>
         <Ionicons name={icon} size={18} color={COLORS.primary} />
       </View>
-      <Text style={styles.quickText}>{label}</Text>
+      <Text style={styles.quickStatLabel}>{label}</Text>
     </TouchableOpacity>
   );
 };
 
-const MenuRow: React.FC<{
+// Menu Item Component
+const MenuItem: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
   title: string;
+  subtitle: string;
   onPress: () => void;
-  destructive?: boolean;
-}> = ({ icon, title, onPress, destructive }) => {
+}> = ({ icon, iconColor, title, subtitle, onPress }) => {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.9}>
-      <View style={styles.rowLeft}>
-        <View style={[styles.rowIconWrap, destructive && styles.rowIconWrapDanger]}>
-          <Ionicons
-            name={icon}
-            size={18}
-            color={destructive ? COLORS.danger : COLORS.text.primary}
-          />
-        </View>
-        <Text style={[styles.rowText, destructive && { color: COLORS.danger }]}>{title}</Text>
+    <TouchableOpacity 
+      style={styles.menuItem} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.menuIconContainer, { backgroundColor: iconColor + '15' }]}>
+        <Ionicons name={icon} size={20} color={iconColor} />
       </View>
-      <Ionicons name="chevron-forward" size={18} color={COLORS.text.light} />
+      <View style={styles.menuContent}>
+        <Text style={styles.menuTitle}>{title}</Text>
+        <Text style={styles.menuSubtitle}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={COLORS.text.light} />
     </TouchableOpacity>
   );
 };
 
-const Divider = () => <View style={styles.divider} />;
+// Menu Divider Component
+const MenuDivider: React.FC = () => <View style={styles.menuDivider} />;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background.primary },
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
 
-  // Guest
-  guestWrap: {
+  // Guest State
+  guestContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 22,
-    paddingBottom: 30,
+    paddingHorizontal: 40,
   },
-  guestIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: (COLORS as any).primarySoft ?? COLORS.background.secondary,
+  guestIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: (COLORS as any).borderSoft ?? COLORS.border,
-    marginBottom: 12,
+    marginBottom: 24,
   },
-  guestTitle: { fontSize: 16.5, fontWeight: '900', color: COLORS.text.primary, marginTop: 4 },
+  guestTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.text.primary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
   guestSubtitle: {
-    marginTop: 8,
-    fontSize: 13,
+    fontSize: 15,
     color: COLORS.text.secondary,
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 14,
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  guestButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    width: '100%',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  guestButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  guestButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
-  primaryBtn: {
-    marginTop: 8,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  // Scroll Content
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 120 : 100,
+  },
+
+  // Profile Header
+  profileHeader: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 24,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  profileHeaderGradient: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+  },
+  avatarText: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
     borderRadius: 16,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    marginBottom: 24,
+  },
+
+  // Quick Stats
+  quickStats: {
     flexDirection: 'row',
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+  },
+  quickStatItem: {
+    flex: 1,
     alignItems: 'center',
     gap: 8,
   },
-  primaryBtnText: { color: '#fff', fontWeight: '900', fontSize: 13.5 },
-
-  // Header card
-  headerCard: {
-    margin: SIZES.padding,
-    marginTop: 8,
-    borderRadius: 22,
-    padding: 14,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 1,
-    borderColor: (COLORS as any).borderSoft ?? COLORS.border,
-  },
-  headerTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-
-  avatarWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 28,
-    overflow: 'hidden',
-    backgroundColor: COLORS.background.tertiary,
-    borderWidth: 1,
-    borderColor: (COLORS as any).borderSoft ?? COLORS.border,
-  },
-  avatarImage: { width: '100%', height: '100%' },
-  avatarText: { flex: 1, textAlign: 'center', textAlignVertical: 'center', fontSize: 24, fontWeight: '900', color: COLORS.text.primary },
-
-  avatarBadge: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    width: 26,
-    height: 26,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-
-  iconBtn: {
+  quickStatIcon: {
     width: 40,
     height: 40,
-    borderRadius: 14,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  name: { marginTop: 12, fontSize: 18, fontWeight: '900', color: COLORS.text.primary },
-  email: { marginTop: 4, fontSize: 12.5, fontWeight: '700', color: COLORS.text.secondary },
-
-  quickRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  quickItem: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  quickIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: (COLORS as any).primarySoft ?? COLORS.background.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: (COLORS as any).borderSoft ?? COLORS.border,
-  },
-  quickText: { fontSize: 12.5, fontWeight: '900', color: COLORS.text.primary },
-
-  // Sections
-  sectionLabel: {
-    marginTop: 6,
-    marginBottom: 8,
-    marginHorizontal: SIZES.padding,
-    fontSize: 12,
-    fontWeight: '900',
-    color: COLORS.text.secondary,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-
-  groupCard: {
-    marginHorizontal: SIZES.padding,
     borderRadius: 20,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 1,
-    borderColor: (COLORS as any).borderSoft ?? COLORS.border,
-    overflow: 'hidden',
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  divider: {
-    height: 1,
-    backgroundColor: (COLORS as any).borderSoft ?? COLORS.border,
-    opacity: 0.7,
-    marginLeft: 56,
+  quickStatLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E5E7EB',
   },
 
-  row: {
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+  // Section
+  section: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 12,
+  },
+
+  // Menu Card
+  menuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: 16,
+    gap: 12,
   },
-  rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  rowIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+  menuIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowIconWrapDanger: {
-    backgroundColor: 'rgba(255,59,48,0.10)',
-    borderColor: 'rgba(255,59,48,0.18)',
+  menuContent: {
+    flex: 1,
   },
-  rowText: { fontSize: 14.5, fontWeight: '900', color: COLORS.text.primary },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 2,
+  },
+  menuSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    lineHeight: 18,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginLeft: 72,
+  },
+
+  // Sign Out Button
+  signOutButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FEE2E2',
+    overflow: 'hidden',
+  },
+  signOutContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  signOutText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.danger,
+  },
+
+  // Version
+  versionText: {
+    fontSize: 12,
+    color: COLORS.text.light,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
 });

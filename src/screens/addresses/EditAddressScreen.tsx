@@ -1,5 +1,5 @@
 // src/screens/addresses/EditAddressScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,14 +11,17 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import MapView, { Marker, Region } from 'react-native-maps';
+import * as Location from 'expo-location';
+
 import { COLORS, SIZES } from '../../constants/colors';
-import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
 import {
   getMyAddresses,
   updateAddress,
@@ -46,9 +49,23 @@ export const EditAddressScreen: React.FC = () => {
     postalCode: '',
     country: '',
     isDefault: false,
+    latitude: null as number | null,
+    longitude: null as number | null,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [locLoading, setLocLoading] = useState(false);
+  const [locError, setLocError] = useState<string | null>(null);
+
+  const region: Region | null = useMemo(() => {
+    if (formData.latitude == null || formData.longitude == null) return null;
+    return {
+      latitude: formData.latitude,
+      longitude: formData.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    };
+  }, [formData.latitude, formData.longitude]);
 
   useEffect(() => {
     loadAddress();
@@ -68,7 +85,7 @@ export const EditAddressScreen: React.FC = () => {
       }
 
       setAddress(found);
-      setFormData({
+    setFormData({
         label: found.label,
         streetAddress: found.street_address,
         city: found.city,
@@ -76,6 +93,8 @@ export const EditAddressScreen: React.FC = () => {
         postalCode: found.postal_code || '',
         country: found.country,
         isDefault: found.is_default,
+        latitude: found.latitude ? parseFloat(found.latitude) : null,
+        longitude: found.longitude ? parseFloat(found.longitude) : null,
       });
     } catch (error) {
       Alert.alert('Error', 'Failed to load address', [
@@ -83,6 +102,31 @@ export const EditAddressScreen: React.FC = () => {
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const requestAndLoadLocation = async () => {
+    setLocError(null);
+    setLocLoading(true);
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocError('Location permission denied');
+        setLocLoading(false);
+        return;
+      }
+
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      updateField('latitude', pos.coords.latitude);
+      updateField('longitude', pos.coords.longitude);
+    } catch (e: any) {
+      setLocError(e?.message || 'Failed to get location');
+    } finally {
+      setLocLoading(false);
     }
   };
 
@@ -109,57 +153,78 @@ export const EditAddressScreen: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) {
-      return;
+const handleSubmit = async () => {
+  if (!validateForm()) {
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    const input: UpdateAddressInput = {
+      label: formData.label,
+      street_address: formData.streetAddress,
+      city: formData.city,
+      state: formData.state || undefined,
+      postal_code: formData.postalCode || undefined,
+      country: formData.country,
+      is_default: formData.isDefault,
+      // Since formData.latitude is already number | null, use it directly
+      latitude: formData.latitude,
+      longitude: formData.longitude,
+    };
+
+    await updateAddress(addressId, input);
+    Alert.alert('Success', 'Address updated successfully', [
+      { text: 'OK', onPress: () => navigation.goBack() },
+    ]);
+  } catch (error: any) {
+    Alert.alert('Error', error.response?.data?.error || 'Failed to update address');
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+const updateField = (field: keyof typeof formData, value: any) => {
+  // Handle numeric fields specially
+  if (field === 'latitude' || field === 'longitude') {
+    // If value is empty string, set to null
+    if (value === '' || value === undefined) {
+      setFormData((prev) => ({ ...prev, [field]: null }));
+    } else {
+      // Convert to number if it's a string
+      const numValue = typeof value === 'string' ? parseFloat(value) : value;
+      setFormData((prev) => ({ ...prev, [field]: numValue }));
     }
-
-    setSubmitting(true);
-
-    try {
-      const input: UpdateAddressInput = {
-        label: formData.label,
-        street_address: formData.streetAddress,
-        city: formData.city,
-        state: formData.state || undefined,
-        postal_code: formData.postalCode || undefined,
-        country: formData.country,
-        is_default: formData.isDefault,
-      };
-
-      await updateAddress(addressId, input);
-      Alert.alert('Success', 'Address updated successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.error || 'Failed to update address');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const updateField = (field: keyof typeof formData, value: string | boolean) => {
+  } else {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    if (typeof value === 'string' && errors[field]) {
-      const newErrors = { ...errors };
-      delete newErrors[field];
-      setErrors(newErrors);
-    }
-  };
+  }
+  
+  if (errors[field]) {
+    const newErrors = { ...errors };
+    delete newErrors[field];
+    setErrors(newErrors);
+  }
+};
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading address...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!address) {
     return (
-      <View style={styles.center}>
-        <Text>Address not found</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>Address not found</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -170,8 +235,10 @@ export const EditAddressScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Address</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Edit Address</Text>
+          <Text style={styles.headerSubtitle}>Update your location details</Text>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -180,164 +247,585 @@ export const EditAddressScreen: React.FC = () => {
       >
         <ScrollView
           style={styles.content}
-          contentContainerStyle={styles.contentContainer}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Label */}
-          <Input
-            label="Address Label *"
-            placeholder="e.g., Home, Work, Office"
-            value={formData.label}
-            onChangeText={(text) => updateField('label', text)}
-            error={errors.label}
-            icon="pricetag-outline"
-          />
-
-          {/* Street Address */}
-          <Input
-            label="Street Address *"
-            placeholder="Building number, street name"
-            value={formData.streetAddress}
-            onChangeText={(text) => updateField('streetAddress', text)}
-            error={errors.streetAddress}
-            icon="home-outline"
-          />
-
-          {/* City */}
-          <Input
-            label="City *"
-            placeholder="e.g., Doha, Al Rayyan"
-            value={formData.city}
-            onChangeText={(text) => updateField('city', text)}
-            error={errors.city}
-            icon="business-outline"
-          />
-
-          {/* State/Region */}
-          <Input
-            label="State/Region (Optional)"
-            placeholder="e.g., Baladiyat ad Dawhah"
-            value={formData.state}
-            onChangeText={(text) => updateField('state', text)}
-            icon="map-outline"
-          />
-
-          {/* Postal Code */}
-          <Input
-            label="Postal Code (Optional)"
-            placeholder="e.g., 12345"
-            value={formData.postalCode}
-            onChangeText={(text) => updateField('postalCode', text)}
-            keyboardType="numeric"
-            icon="mail-outline"
-          />
-
-          {/* Country */}
-          <Input
-            label="Country *"
-            placeholder="Country"
-            value={formData.country}
-            onChangeText={(text) => updateField('country', text)}
-            error={errors.country}
-            icon="globe-outline"
-          />
-
-          {/* Set as Default */}
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => updateField('isDefault', !formData.isDefault)}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={formData.isDefault ? 'checkbox' : 'square-outline'}
-              size={24}
-              color={formData.isDefault ? COLORS.primary : COLORS.text.light}
-            />
-            <View style={styles.checkboxTextContainer}>
-              <Text style={styles.checkboxLabel}>Set as default address</Text>
-              <Text style={styles.checkboxHint}>
-                This address will be selected automatically for new bookings
-              </Text>
+          {/* Map Section */}
+          <View style={styles.mapSection}>
+            <View style={styles.mapHeader}>
+              <View style={styles.mapHeaderLeft}>
+                <View style={styles.mapIconContainer}>
+                  <Ionicons name="location" size={18} color="#F59E0B" />
+                </View>
+                <Text style={styles.mapTitle}>Current Location</Text>
+              </View>
+              <TouchableOpacity
+                onPress={requestAndLoadLocation}
+                style={styles.refreshButton}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="refresh" size={16} color={COLORS.primary} />
+                <Text style={styles.refreshText}>Update</Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
 
-          {/* Save Button */}
-          <Button
-            title="Update Address"
-            onPress={handleSubmit}
-            loading={submitting}
-            variant="primary"
-            style={styles.saveButton}
-          />
+            {locLoading ? (
+              <View style={styles.mapPlaceholder}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.mapPlaceholderText}>Updating location...</Text>
+              </View>
+            ) : region ? (
+              <View style={styles.mapContainer}>
+                <MapView
+                  style={styles.map}
+                  initialRegion={region}
+                  region={region}
+                  showsUserLocation
+                  showsMyLocationButton
+                >
+                  <Marker
+                    coordinate={{ latitude: region.latitude, longitude: region.longitude }}
+                    title="Saved Location"
+                    description="This location is saved with your address"
+                  />
+                </MapView>
+                <View style={styles.coordsContainer}>
+                  <Ionicons name="location" size={12} color="#10B981" />
+                  <Text style={styles.coordsText}>
+                    {formData.latitude?.toFixed(6)}, {formData.longitude?.toFixed(6)}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.mapError}>
+                <LinearGradient
+                  colors={['#FEF2F2', '#FEE2E2']}
+                  style={styles.errorIconContainer}
+                >
+                  <Ionicons name="location-outline" size={32} color={COLORS.danger} />
+                </LinearGradient>
+                <Text style={styles.errorTitle}>No Location Saved</Text>
+                <Text style={styles.errorText}>
+                  Tap "Update" to add GPS coordinates to this address
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Form Section */}
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>Address Information</Text>
+
+            {/* Label */}
+            <FormInput
+              label="Address Label"
+              placeholder="e.g., Home, Work, Office"
+              value={formData.label}
+              onChangeText={(text) => updateField('label', text)}
+              error={errors.label}
+              icon="pricetag"
+              required
+            />
+
+            {/* Street Address */}
+            <FormInput
+              label="Street Address"
+              placeholder="Building number, street name"
+              value={formData.streetAddress}
+              onChangeText={(text) => updateField('streetAddress', text)}
+              error={errors.streetAddress}
+              icon="home"
+              required
+            />
+
+            {/* City */}
+            <FormInput
+              label="City"
+              placeholder="e.g., Doha, Al Rayyan"
+              value={formData.city}
+              onChangeText={(text) => updateField('city', text)}
+              error={errors.city}
+              icon="business"
+              required
+            />
+
+            {/* State/Region */}
+            <FormInput
+              label="State/Region"
+              placeholder="e.g., Baladiyat ad Dawhah"
+              value={formData.state}
+              onChangeText={(text) => updateField('state', text)}
+              icon="map"
+            />
+
+            {/* Postal Code */}
+            <FormInput
+              label="Postal Code"
+              placeholder="e.g., 12345"
+              value={formData.postalCode}
+              onChangeText={(text) => updateField('postalCode', text)}
+              keyboardType="numeric"
+              icon="mail"
+            />
+
+            {/* Country */}
+            <FormInput
+              label="Country"
+              placeholder="Country"
+              value={formData.country}
+              onChangeText={(text) => updateField('country', text)}
+              error={errors.country}
+              icon="globe"
+              required
+            />
+          </View>
+
+          {/* Default Address */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Preferences</Text>
+
+            <TouchableOpacity
+              style={styles.defaultCard}
+              onPress={() => updateField('isDefault', !formData.isDefault)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.defaultCardContent}>
+                <View style={styles.checkboxContainer}>
+                  {formData.isDefault ? (
+                    <LinearGradient
+                      colors={[COLORS.primary, COLORS.secondary]}
+                      style={styles.checkbox}
+                    >
+                      <Ionicons name="checkmark" size={16} color="#FFF" />
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.checkboxEmpty} />
+                  )}
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.defaultLabel}>Set as default address</Text>
+                  <Text style={styles.defaultHint}>
+                    This address will be selected automatically for new bookings
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Bottom Actions */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.saveButton, submitting && styles.saveButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={submitting}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={submitting ? ['#9CA3AF', '#6B7280'] : [COLORS.primary, COLORS.secondary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.saveButtonGradient}
+          >
+            {submitting ? (
+              <>
+                <ActivityIndicator size="small" color="#FFF" />
+                <Text style={styles.saveButtonText}>Updating...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={20} color="#FFF" />
+                <Text style={styles.saveButtonText}>Update Address</Text>
+              </>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
+  );
+};
+
+// Form Input Component - Simplified
+const FormInput: React.FC<{
+  label: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  error?: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  required?: boolean;
+  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
+}> = ({ label, placeholder, value, onChangeText, error, icon, required, keyboardType = 'default' }) => {
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.inputLabel}>
+        {label} {required && <Text style={styles.requiredMark}>*</Text>}
+      </Text>
+      <View style={[styles.inputContainer, error && styles.inputContainerError]}>
+        <View style={styles.inputIcon}>
+          <Ionicons name={icon} size={18} color={COLORS.text.secondary} />
+        </View>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={COLORS.text.light}
+          style={styles.input}
+          keyboardType={keyboardType}
+        />
+      </View>
+      {error && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background.secondary,
+    backgroundColor: '#F9FAFB',
   },
-  center: {
+
+  // Loading
+  loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  errorText: {
+    fontSize: 16,
+    color: COLORS.danger,
+  },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
   },
   backButton: {
     width: 40,
     height: 40,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: SIZES.h4,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
+  headerSubtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+  },
+
+  // Content
   content: {
     flex: 1,
   },
-  contentContainer: {
-    padding: SIZES.padding,
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 180 : 150,
   },
-  checkboxContainer: {
+
+  // Map Section
+  mapSection: {
+    margin: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  mapHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: COLORS.background.primary,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 16,
-    borderRadius: SIZES.radius,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  mapHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  mapIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 4,
+  },
+  refreshText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  mapPlaceholder: {
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  mapPlaceholderText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  mapContainer: {
+    position: 'relative',
+  },
+  map: {
+    height: 200,
+  },
+  coordsContainer: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 4,
+  },
+  coordsText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  mapError: {
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  errorIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 16,
   },
-  checkboxTextContainer: {
-    flex: 1,
-    marginLeft: 12,
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 6,
   },
-  checkboxLabel: {
-    fontSize: SIZES.body,
-    fontWeight: '600',
+
+  // Section
+  section: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  formSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 16,
+  },
+
+  // Input Group - Simplified
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  requiredMark: {
+    color: COLORS.danger,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  inputContainerError: {
+    borderColor: COLORS.danger,
+    backgroundColor: '#FEF2F2',
+  },
+  inputIcon: {
+    width: 48,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text.primary,
+    paddingVertical: 16,
+    paddingRight: 16,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginLeft: 4,
+  },
+
+  // Default Card
+  defaultCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  defaultCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  checkboxContainer: {
+    padding: 4,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxEmpty: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+  },
+  defaultLabel: {
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.text.primary,
     marginBottom: 4,
   },
-  checkboxHint: {
-    fontSize: SIZES.small,
+  defaultHint: {
+    fontSize: 13,
     color: COLORS.text.secondary,
     lineHeight: 18,
   },
+
+  // Bottom Bar
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 110 : 90, // Account for tab bar height
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
   saveButton: {
-    marginBottom: 20,
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  saveButtonDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  saveButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  saveButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

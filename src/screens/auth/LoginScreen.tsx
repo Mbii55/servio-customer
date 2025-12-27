@@ -1,5 +1,5 @@
 // src/screens/auth/LoginScreen.tsx
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  SafeAreaView,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../context/AuthContext';
-import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
 import { COLORS, SIZES } from '../../constants/colors';
 
 type AuthStackParamList = {
@@ -31,17 +32,9 @@ export const LoginScreen: React.FC = () => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
-
-  const palette = useMemo(() => {
-    return {
-      surface: (COLORS as any).surface ?? '#FFFFFF',
-      border: (COLORS as any).border ?? 'rgba(0,0,0,0.08)',
-      muted: (COLORS as any).muted ?? 'rgba(0,0,0,0.04)',
-      shadow: (COLORS as any).shadow ?? 'rgba(0,0,0,0.16)',
-    };
-  }, []);
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -70,206 +63,363 @@ export const LoginScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={[styles.container, { backgroundColor: COLORS.background.primary }]}
-    >
-      {/* Decorative background */}
-      <View pointerEvents="none" style={[styles.blob, styles.blobOne, { backgroundColor: (COLORS as any).primarySoft ?? palette.muted }]} />
-      <View pointerEvents="none" style={[styles.blob, styles.blobTwo, { backgroundColor: (COLORS as any).primarySoft2 ?? palette.muted }]} />
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        <View style={styles.content}>
-          {/* Hero */}
-          <View style={styles.hero}>
-            <View style={[styles.heroIcon, { backgroundColor: (COLORS as any).primarySoft ?? palette.muted }]}>
-              <Ionicons name="sparkles" size={18} color={COLORS.primary} />
-            </View>
-            <Text style={styles.brand}>Servio</Text>
-            <Text style={styles.heroTitle}>Welcome back</Text>
-            <Text style={styles.heroSubtitle}>Sign in to book services faster and manage your orders.</Text>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.logoContainer}
+            >
+              <Ionicons name="briefcase" size={32} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.brandName}>Servio</Text>
+            <Text style={styles.welcomeText}>Welcome back!</Text>
+            <Text style={styles.subtitleText}>
+              Sign in to continue to your account
+            </Text>
           </View>
 
-          {/* Card */}
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: palette.surface,
-                borderColor: palette.border,
-                shadowColor: palette.shadow,
-              },
-            ]}
-          >
-            <Input
-              label="Email"
-              placeholder="you@example.com"
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                if (errors.email) setErrors((p) => ({ ...p, email: undefined }));
-              }}
-              error={errors.email}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              icon="mail-outline"
-            />
+          {/* Form */}
+          <View style={styles.formSection}>
+            {/* Email Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <View style={[styles.inputContainer, errors.email && styles.inputContainerError]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="mail" size={18} color={COLORS.text.secondary} />
+                </View>
+                <TextInput
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (errors.email) setErrors((p) => ({ ...p, email: undefined }));
+                  }}
+                  placeholder="you@example.com"
+                  placeholderTextColor={COLORS.text.light}
+                  style={styles.input}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              {errors.email && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                  <Text style={styles.errorText}>{errors.email}</Text>
+                </View>
+              )}
+            </View>
 
-            <Input
-              label="Password"
-              placeholder="••••••••"
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
-              }}
-              error={errors.password}
-              secureTextEntry
-              icon="lock-closed-outline"
-            />
+            {/* Password Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={[styles.inputContainer, errors.password && styles.inputContainerError]}>
+                <View style={styles.inputIcon}>
+                  <Ionicons name="lock-closed" size={18} color={COLORS.text.secondary} />
+                </View>
+                <TextInput
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
+                  }}
+                  placeholder="Enter your password"
+                  placeholderTextColor={COLORS.text.light}
+                  style={styles.input}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.passwordToggle}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={COLORS.text.secondary}
+                  />
+                </TouchableOpacity>
+              </View>
+              {errors.password && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.danger} />
+                  <Text style={styles.errorText}>{errors.password}</Text>
+                </View>
+              )}
+            </View>
 
-            <TouchableOpacity style={styles.forgotPassword} activeOpacity={0.8}>
+            {/* Forgot Password */}
+            <TouchableOpacity 
+              style={styles.forgotPassword} 
+              activeOpacity={0.7}
+              onPress={() => Alert.alert('Forgot Password', 'This feature is coming soon!')}
+            >
               <Text style={styles.forgotPasswordText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <Button title="Continue" onPress={handleLogin} loading={loading} style={styles.loginButton} />
+            {/* Login Button */}
+            <TouchableOpacity
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={loading ? ['#9CA3AF', '#6B7280'] : [COLORS.primary, COLORS.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.loginButtonGradient}
+              >
+                {loading ? (
+                  <>
+                    <Text style={styles.loginButtonText}>Signing in...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.loginButtonText}>Sign In</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
 
-            <Text style={styles.legal}>
-              By continuing you agree to our Terms & Privacy Policy.
+            {/* Terms */}
+            <Text style={styles.termsText}>
+              By continuing, you agree to our{' '}
+              <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+              <Text style={styles.termsLink}>Privacy Policy</Text>
             </Text>
           </View>
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>New here? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')} activeOpacity={0.8}>
-              <Text style={styles.signUpText}>Create an account</Text>
-            </TouchableOpacity>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <View style={styles.signupPrompt}>
+              <Text style={styles.signupText}>Don't have an account?</Text>
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('Register')} 
+                activeOpacity={0.7}
+              >
+                <Text style={styles.signupLink}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
 
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 30,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 20 : 40,
+    paddingBottom: 40,
   },
 
-  content: {
-    flex: 1,
-    paddingHorizontal: SIZES.padding * 1.5,
-    paddingTop: 54,
+  // Header
+  header: {
+    alignItems: 'center',
+    marginBottom: 40,
   },
-
-  blob: {
-    position: 'absolute',
-    borderRadius: 999,
-    opacity: 0.7,
-  },
-  blobOne: {
-    width: 240,
-    height: 240,
-    top: -70,
-    left: -70,
-  },
-  blobTwo: {
-    width: 280,
-    height: 280,
-    bottom: -90,
-    right: -90,
-  },
-
-  hero: {
-    marginBottom: 18,
-  },
-
-  heroIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-
-  brand: {
-    fontSize: SIZES.body,
+  brandName: {
+    fontSize: 28,
     fontWeight: '800',
     color: COLORS.text.primary,
     marginBottom: 8,
   },
-
-  heroTitle: {
-    fontSize: SIZES.h1,
-    fontWeight: '900',
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: '700',
     color: COLORS.text.primary,
     marginBottom: 8,
   },
-
-  heroSubtitle: {
-    fontSize: SIZES.body,
+  subtitleText: {
+    fontSize: 15,
     color: COLORS.text.secondary,
-    lineHeight: 22,
+    textAlign: 'center',
   },
 
-  card: {
+  // Form Section
+  formSection: {
+    marginBottom: 32,
+  },
+
+  // Input Group
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  inputContainerError: {
+    borderColor: COLORS.danger,
+    backgroundColor: '#FEF2F2',
+  },
+  inputIcon: {
+    width: 48,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text.primary,
+    paddingVertical: 16,
+    paddingRight: 16,
+  },
+  passwordToggle: {
+    width: 44,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  errorText: {
+    fontSize: 13,
+    color: COLORS.danger,
   },
 
+  // Forgot Password
   forgotPassword: {
     alignSelf: 'flex-end',
-    marginTop: 4,
-    marginBottom: 14,
+    marginBottom: 24,
   },
-
   forgotPasswordText: {
-    fontSize: SIZES.small,
+    fontSize: 14,
+    fontWeight: '600',
     color: COLORS.primary,
-    fontWeight: '700',
   },
 
+  // Login Button
   loginButton: {
-    marginTop: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  loginButtonDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  loginButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  loginButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
-  legal: {
-    marginTop: 12,
-    fontSize: SIZES.small,
+  // Terms
+  termsText: {
+    fontSize: 12,
     color: COLORS.text.secondary,
     textAlign: 'center',
     lineHeight: 18,
   },
-
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 18,
+  termsLink: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
 
-  footerText: {
-    fontSize: SIZES.body,
+  // Footer
+  footer: {
+    marginTop: 'auto',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    fontSize: 14,
+    color: COLORS.text.light,
+    fontWeight: '500',
+  },
+  signupPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  signupText: {
+    fontSize: 15,
     color: COLORS.text.secondary,
   },
-
-  signUpText: {
-    fontSize: SIZES.body,
+  signupLink: {
+    fontSize: 15,
+    fontWeight: '700',
     color: COLORS.primary,
-    fontWeight: '800',
   },
 });
