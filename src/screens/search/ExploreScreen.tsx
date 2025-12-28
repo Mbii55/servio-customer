@@ -21,6 +21,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import api from '../../services/api';
 import { COLORS, SIZES } from '../../constants/colors';
 import { ServiceCard } from '../../components/services/ServiceCard';
+import { listMyNotifications, NotificationItem } from '../../services/notifications';
+import { useAuth } from '../../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
@@ -67,6 +69,25 @@ export const ExploreScreen: React.FC = () => {
   const [totalServices, setTotalServices] = useState(0);
   const [totalProviders, setTotalProviders] = useState(0);
   const [offset, setOffset] = useState(0);
+  const { isAuthenticated } = useAuth();
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
+  const loadUnreadNotifications = useCallback(async () => {
+    if (!isAuthenticated) {
+      setUnreadNotificationsCount(0);
+      return;
+    }
+
+    try {
+      const data = await listMyNotifications({ limit: 50, offset: 0 });
+      const notifications = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+      const unreadCount = notifications.filter((n: NotificationItem) => !n.is_read).length;
+      setUnreadNotificationsCount(unreadCount);
+    } catch (error) {
+      console.error('Failed to load notifications count:', error);
+      setUnreadNotificationsCount(0);
+    }
+  }, [isAuthenticated]);
 
   const load = useCallback(async () => {
     try {
@@ -75,7 +96,10 @@ export const ExploreScreen: React.FC = () => {
       const cats = (catRes.data?.data ?? catRes.data ?? []) as Category[];
       setCategories(Array.isArray(cats) ? cats.filter((c) => c?.id && c?.name) : []);
 
-      await loadResults(true);
+      await Promise.all([
+        loadResults(true),
+        loadUnreadNotifications() // Add this line
+      ]);
     } catch (error) {
       console.error('Load error:', error);
       setCategories([]);
@@ -84,7 +108,7 @@ export const ExploreScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadUnreadNotifications]);
 
   const loadResults = useCallback(async (reset = false) => {
     try {
@@ -164,8 +188,9 @@ export const ExploreScreen: React.FC = () => {
     setQuery('');
     setSelectedCategory(null);
     await load();
+    await loadUnreadNotifications(); // Add this line
     setRefreshing(false);
-  }, [load]);
+  }, [load, loadUnreadNotifications]);
 
   const popularServices = useMemo(() => services.slice(0, 10), [services]);
   const featuredProviders = useMemo(() => providers.slice(0, 10), [providers]);
@@ -233,7 +258,13 @@ export const ExploreScreen: React.FC = () => {
             activeOpacity={0.7}
           >
             <Ionicons name="notifications-outline" size={24} color={COLORS.text.primary} />
-            <View style={styles.notificationDot} />
+            {unreadNotificationsCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -338,8 +369,8 @@ export const ExploreScreen: React.FC = () => {
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
@@ -426,8 +457,8 @@ export const ExploreScreen: React.FC = () => {
           <View style={styles.sectionHeaderPadded}>
             <View>
               <Text style={styles.sectionTitle}>
-                {isSearching 
-                  ? 'Search Results' 
+                {isSearching
+                  ? 'Search Results'
                   : searchMode === 'services' ? 'All Services' : 'All Shops'
                 }
               </Text>
@@ -1186,5 +1217,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.primary,
+  },
+
+  // Add these styles to the StyleSheet (at the end of the styles object)
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  notificationBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
