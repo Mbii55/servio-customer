@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
 
   // Scroll
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 80,
   },
 
   // Header

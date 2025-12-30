@@ -1,6 +1,7 @@
 // src/context/AuthContext.tsx
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState, AppStateStatus, Alert } from 'react-native';
 import api from '../services/api';
 import { User, AuthResponse } from '../types';
 import { updateMe, UpdateMeInput } from '../services/profile';
@@ -29,7 +30,9 @@ interface AuthContextData {
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
 const SUSPENDED_MESSAGE =
-  "Your account is suspended due to suspesios activites, contact us at info@servio.com.";
+  "Your account has been suspended due to suspicious activities. Please contact our support team at info@servio.com for assistance.";
+
+const SUSPENDED_TITLE = "Account Suspended";
 
 async function clearSession(setUser: (u: User | null) => void) {
   await AsyncStorage.removeItem('token');
@@ -40,10 +43,107 @@ async function clearSession(setUser: (u: User | null) => void) {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Polling interval ref
+  const statusCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   useEffect(() => {
     loadStorageData();
   }, []);
+
+  // Setup status polling and app state monitoring
+  useEffect(() => {
+    if (!user) {
+      // Clear any existing interval when user logs out
+      if (statusCheckIntervalRef.current) {
+        clearInterval(statusCheckIntervalRef.current);
+        statusCheckIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Check status immediately when user logs in
+    checkUserStatus();
+
+    // Poll every 30 seconds while user is logged in
+    statusCheckIntervalRef.current = setInterval(() => {
+      checkUserStatus();
+    }, 30000); // 30 seconds
+
+    // Monitor app state changes (foreground/background)
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      if (statusCheckIntervalRef.current) {
+        clearInterval(statusCheckIntervalRef.current);
+      }
+      subscription.remove();
+    };
+  }, [user]);
+
+  // Check user status when app comes to foreground
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    if (
+      appStateRef.current.match(/inactive|background/) &&
+      nextAppState === 'active' &&
+      user
+    ) {
+      // App has come to foreground, check user status
+      checkUserStatus();
+    }
+    appStateRef.current = nextAppState;
+  };
+
+  // Check if user is suspended
+  const checkUserStatus = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token || !user) return;
+
+      const response = await api.get('/auth/me');
+      const freshUser = response.data.user as User;
+
+      // Check if user was suspended
+      if ((freshUser as any).status === 'suspended') {
+        console.log('User account suspended, logging out...');
+        await clearSession(setUser);
+        
+        // Show suspension alert
+        Alert.alert(
+          SUSPENDED_TITLE,
+          SUSPENDED_MESSAGE,
+          [{ text: 'OK', style: 'default' }],
+          { cancelable: false }
+        );
+        return;
+      }
+
+      // Check if role changed from customer
+      if (freshUser.role !== 'customer') {
+        console.log('User role changed, logging out...');
+        await clearSession(setUser);
+        
+        Alert.alert(
+          'Access Denied',
+          'This app is only for customers. Please use the web portal for service providers.',
+          [{ text: 'OK', style: 'default' }],
+          { cancelable: false }
+        );
+        return;
+      }
+
+      // Update user data if still valid
+      await AsyncStorage.setItem('user', JSON.stringify(freshUser));
+      setUser(freshUser);
+    } catch (error) {
+      console.error('Status check failed:', error);
+      // Don't logout on network errors, only on 401/403
+      if ((error as any)?.response?.status === 401 || (error as any)?.response?.status === 403) {
+        await clearSession(setUser);
+      }
+    }
+  };
 
   const loadStorageData = async () => {
     try {
@@ -67,9 +167,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
 
-          // ✅ NEW: auto-logout if suspended
+          // auto-logout if suspended
           if ((freshUser as any).status === 'suspended') {
             await clearSession(setUser);
+            
+            // Show alert on app load
+            Alert.alert(
+              SUSPENDED_TITLE,
+              SUSPENDED_MESSAGE,
+              [{ text: 'OK', style: 'default' }],
+              { cancelable: false }
+            );
             return;
           }
 
@@ -98,12 +206,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (freshUser.role !== 'customer') {
       await clearSession(setUser);
+      
+      Alert.alert(
+        'Access Denied',
+        'This app is only for customers. Please use the web portal for service providers.',
+        [{ text: 'OK', style: 'default' }],
+        { cancelable: false }
+      );
       return;
     }
 
-    // ✅ NEW: auto-logout if suspended
+    // auto-logout if suspended
     if ((freshUser as any).status === 'suspended') {
       await clearSession(setUser);
+      
+      Alert.alert(
+        SUSPENDED_TITLE,
+        SUSPENDED_MESSAGE,
+        [{ text: 'OK', style: 'default' }],
+        { cancelable: false }
+      );
       return;
     }
 
@@ -111,53 +233,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(freshUser);
   };
 
-const signIn = async (email: string, password: string) => {
-  try {
-    const response = await api.post<AuthResponse>("/auth/login", { email, password });
-    const { token, user: userData } = response.data;
-
-    // Only allow customers
-    if (userData.role !== "customer") {
-      throw new Error(
-        "This app is only for customers. Please use the web portal for service providers."
-      );
-    }
-
-    // If backend still returns user + status (extra safety)
-    if ((userData as any).status === "suspended") {
-      throw new Error(SUSPENDED_MESSAGE);
-    }
-
-    await AsyncStorage.setItem("token", token);
-    await AsyncStorage.setItem("user", JSON.stringify(userData));
-    setUser(userData);
-
-    // push token (don’t block login)
+  const signIn = async (email: string, password: string) => {
     try {
-      const expoToken = await registerForPushNotificationsAsync();
-      if (expoToken) {
-        await savePushTokenToBackend(expoToken);
+      const response = await api.post<AuthResponse>("/auth/login", { email, password });
+      const { token, user: userData } = response.data;
+
+      // Only allow customers
+      if (userData.role !== "customer") {
+        throw new Error(
+          "This app is only for customers. Please use the web portal for service providers."
+        );
       }
-    } catch (e) {
-      console.log("Push token setup failed:", e);
+
+      // If backend still returns user + status (extra safety)
+      if ((userData as any).status === "suspended") {
+        throw new Error(SUSPENDED_MESSAGE);
+      }
+
+      await AsyncStorage.setItem("token", token);
+      await AsyncStorage.setItem("user", JSON.stringify(userData));
+      setUser(userData);
+
+      // push token (don't block login)
+      try {
+        const expoToken = await registerForPushNotificationsAsync();
+        if (expoToken) {
+          await savePushTokenToBackend(expoToken);
+        }
+      } catch (e) {
+        console.log("Push token setup failed:", e);
+      }
+    } catch (error: any) {
+      // IMPORTANT: read message FIRST (your backend uses { message: ... } for 403)
+      const backendMsg =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        "";
+
+      // If backend indicates suspension, force your exact message
+      if (typeof backendMsg === "string" && backendMsg.toLowerCase().includes("suspend")) {
+        throw new Error(SUSPENDED_MESSAGE);
+      }
+
+      if (error.message?.includes("only for customers")) throw error;
+
+      throw new Error(backendMsg || "Login failed");
     }
-  } catch (error: any) {
-    // ✅ IMPORTANT: read message FIRST (your backend uses { message: ... } for 403)
-    const backendMsg =
-      error.response?.data?.message ||
-      error.response?.data?.error ||
-      "";
-
-    // If backend indicates suspension, force your exact message
-    if (typeof backendMsg === "string" && backendMsg.toLowerCase().includes("suspend")) {
-      throw new Error(SUSPENDED_MESSAGE);
-    }
-
-    if (error.message?.includes("only for customers")) throw error;
-
-    throw new Error(backendMsg || "Login failed");
-  }
-};
+  };
 
   const signUp = async (data: RegisterData) => {
     try {
@@ -176,7 +298,7 @@ const signIn = async (email: string, password: string) => {
         throw new Error('Registration must create a customer account.');
       }
 
-      // ✅ NEW: safety (if suspended for any reason)
+      // safety (if suspended for any reason)
       if ((userData as any).status === 'suspended') {
         throw new Error(SUSPENDED_MESSAGE);
       }
@@ -207,7 +329,7 @@ const signIn = async (email: string, password: string) => {
       throw new Error('This app is only for customers.');
     }
 
-    // ✅ NEW: if suspension happens after profile update
+    // if suspension happens after profile update
     if ((updatedUser as any).status === 'suspended') {
       await clearSession(setUser);
       throw new Error(SUSPENDED_MESSAGE);

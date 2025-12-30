@@ -13,7 +13,6 @@ import {
   NativeSyntheticEvent,
   Share,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
@@ -32,6 +31,34 @@ import { getFavoriteStatus, toggleFavorite } from '../../services/favorites';
 
 type Params = { serviceId: string };
 type NavProp = NativeStackNavigationProp<HomeStackParamList>;
+
+type ReviewItem = {
+  id: string;
+  booking_id: string;
+  customer_id: string;
+  provider_id: string;
+  service_id: string;
+  rating: number;
+  comment: string | null;
+  provider_response: string | null;
+  provider_response_at: string | null;
+  created_at: string;
+
+  customer_first_name?: string;
+  customer_last_name?: string;
+  customer_profile_image?: string | null;
+};
+
+type ReviewStats = {
+  total_reviews: number;
+  average_rating: number;
+  five_star_count: number;
+  four_star_count: number;
+  three_star_count: number;
+  two_star_count: number;
+  one_star_count: number;
+  response_count: number;
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 320;
@@ -54,9 +81,47 @@ export const ServiceDetailsScreen: React.FC = () => {
   const [failedImages, setFailedImages] = useState<Record<number, boolean>>({});
   const galleryRef = useRef<ScrollView>(null);
 
+  // Reviews state
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsErr, setReviewsErr] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
+
   useEffect(() => {
     loadServiceData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceId]);
+
+  const loadAddons = async (id: string): Promise<ServiceAddon[]> => {
+    try {
+      const response = await api.get(`/addons/service/${id}`);
+      return response.data || [];
+    } catch (error) {
+      console.error('Failed to load addons:', error);
+      return [];
+    }
+  };
+
+  const loadReviews = async (id: string) => {
+    try {
+      setReviewsErr(null);
+      setReviewsLoading(true);
+
+      const res = await api.get(`/reviews/service/${id}`);
+      const r = Array.isArray(res.data?.reviews) ? (res.data.reviews as ReviewItem[]) : [];
+      const s = res.data?.statistics as ReviewStats | undefined;
+
+      setReviews(r);
+      setReviewStats(s ?? null);
+    } catch (e: any) {
+      console.error('Failed to load reviews:', e);
+      setReviews([]);
+      setReviewStats(null);
+      setReviewsErr(e?.response?.data?.error || e?.message || 'Failed to load reviews');
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
 
   const loadServiceData = async () => {
     setErr(null);
@@ -67,7 +132,7 @@ export const ServiceDetailsScreen: React.FC = () => {
         getServiceById(serviceId),
         loadAddons(serviceId),
       ]);
-      
+
       setService(serviceData);
       setAddons(addonsData);
       setActiveIndex(0);
@@ -77,6 +142,8 @@ export const ServiceDetailsScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
+
+    loadReviews(serviceId);
   };
 
   useEffect(() => {
@@ -89,22 +156,12 @@ export const ServiceDetailsScreen: React.FC = () => {
         const s = await getFavoriteStatus(serviceId);
         setIsFavorite(!!s.is_favorite);
       } catch {
-        // ignore status errors
+        // ignore
       }
     };
 
     loadFav();
   }, [isAuthenticated, serviceId]);
-
-  const loadAddons = async (serviceId: string): Promise<ServiceAddon[]> => {
-    try {
-      const response = await api.get(`/addons/service/${serviceId}`);
-      return response.data || [];
-    } catch (error) {
-      console.error('Failed to load addons:', error);
-      return [];
-    }
-  };
 
   const images = useMemo(() => {
     const arr = service?.images ?? [];
@@ -120,16 +177,13 @@ export const ServiceDetailsScreen: React.FC = () => {
     return `${service?.base_price ?? ''}`;
   }, [service?.base_price]);
 
-  const activeAddons = useMemo(() => {
-    return addons.filter((a) => a.is_active);
-  }, [addons]);
+  const activeAddons = useMemo(() => addons.filter((a) => a.is_active), [addons]);
 
   const onBookPress = () => {
     if (!isAuthenticated) {
       setShowAuthModal(true);
       return;
     }
-    
     navigation.navigate('BookService', { serviceId });
   };
 
@@ -171,6 +225,39 @@ export const ServiceDetailsScreen: React.FC = () => {
   const goToImage = (idx: number) => {
     setActiveIndex(idx);
     galleryRef.current?.scrollTo({ x: idx * SCREEN_WIDTH, y: 0, animated: true });
+  };
+
+  const formatDate = (iso?: string | null) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString();
+    } catch {
+      return '';
+    }
+  };
+
+  const initialsFrom = (first?: string, last?: string) => {
+    const a = (first || '').trim().charAt(0).toUpperCase();
+    const b = (last || '').trim().charAt(0).toUpperCase();
+    return `${a}${b}`.trim() || 'U';
+  };
+
+  const renderStars = (rating: number, size = 14) => {
+    const r = Math.max(0, Math.min(5, Math.round(rating)));
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Ionicons
+            key={i}
+            name={i <= r ? 'star' : 'star-outline'}
+            size={size}
+            color={i <= r ? '#F59E0B' : '#D1D5DB'}
+            style={{ marginRight: 2 }}
+          />
+        ))}
+      </View>
+    );
   };
 
   if (loading) {
@@ -226,6 +313,9 @@ export const ServiceDetailsScreen: React.FC = () => {
   const shopEmail = bp?.business_email ?? null;
   const shopLocation = [bp?.city, bp?.country].filter(Boolean).join(', ');
 
+  const avg = reviewStats?.average_rating ?? 0;
+  const total = reviewStats?.total_reviews ?? 0;
+
   return (
     <View style={styles.container}>
       {/* Floating Header */}
@@ -249,8 +339,8 @@ export const ServiceDetailsScreen: React.FC = () => {
         </View>
       </SafeAreaView>
 
-      <ScrollView 
-        style={styles.scrollView} 
+      <ScrollView
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -278,10 +368,7 @@ export const ServiceDetailsScreen: React.FC = () => {
                           onError={() => setFailedImages((prev) => ({ ...prev, [idx]: true }))}
                         />
                       ) : (
-                        <LinearGradient
-                          colors={['#F9FAFB', '#F3F4F6']}
-                          style={styles.imageFallback}
-                        >
+                        <LinearGradient colors={['#F9FAFB', '#F3F4F6']} style={styles.imageFallback}>
                           <Ionicons name="image-outline" size={48} color={COLORS.text.light} />
                         </LinearGradient>
                       )}
@@ -293,25 +380,20 @@ export const ServiceDetailsScreen: React.FC = () => {
               {images.length > 1 && (
                 <View style={styles.pagination}>
                   {images.map((_, idx) => (
-                    <TouchableOpacity
-                      key={idx}
-                      onPress={() => goToImage(idx)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[
-                        styles.paginationDot,
-                        idx === activeIndex && styles.paginationDotActive,
-                      ]} />
+                    <TouchableOpacity key={idx} onPress={() => goToImage(idx)} activeOpacity={0.7}>
+                      <View
+                        style={[
+                          styles.paginationDot,
+                          idx === activeIndex && styles.paginationDotActive,
+                        ]}
+                      />
                     </TouchableOpacity>
                   ))}
                 </View>
               )}
             </>
           ) : (
-            <LinearGradient
-              colors={['#F9FAFB', '#F3F4F6']}
-              style={styles.imageFallback}
-            >
+            <LinearGradient colors={['#F9FAFB', '#F3F4F6']} style={styles.imageFallback}>
               <Ionicons name="image-outline" size={64} color={COLORS.text.light} />
               <Text style={styles.noImageText}>No images available</Text>
             </LinearGradient>
@@ -324,6 +406,15 @@ export const ServiceDetailsScreen: React.FC = () => {
           <View style={styles.titleCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{service.title}</Text>
+
+              {/* Rating summary */}
+              <View style={styles.ratingSummaryRow}>
+                {renderStars(avg, 16)}
+                <Text style={styles.ratingSummaryText}>
+                  {avg ? `${avg.toFixed(1)} / 5` : 'No rating yet'} • {total} review{total === 1 ? '' : 's'}
+                </Text>
+              </View>
+
               <View style={styles.priceContainer}>
                 <Text style={styles.priceLabel}>Starting from</Text>
                 <View style={styles.priceRow}>
@@ -416,9 +507,7 @@ export const ServiceDetailsScreen: React.FC = () => {
                       colors={[COLORS.primary, COLORS.secondary]}
                       style={styles.providerAvatarPlaceholder}
                     >
-                      <Text style={styles.providerAvatarText}>
-                        {shopName.charAt(0).toUpperCase()}
-                      </Text>
+                      <Text style={styles.providerAvatarText}>{shopName.charAt(0).toUpperCase()}</Text>
                     </LinearGradient>
                   )}
 
@@ -433,9 +522,7 @@ export const ServiceDetailsScreen: React.FC = () => {
                   </View>
                 </View>
 
-                {shopDesc && (
-                  <Text style={styles.providerDescription}>{shopDesc}</Text>
-                )}
+                {shopDesc && <Text style={styles.providerDescription}>{shopDesc}</Text>}
 
                 {(shopPhone || shopEmail) && (
                   <View style={styles.contactInfo}>
@@ -457,11 +544,8 @@ export const ServiceDetailsScreen: React.FC = () => {
                 <TouchableOpacity
                   style={styles.viewProfileButton}
                   onPress={() => {
-                    if (providerId) {
-                      navigation.navigate('ProviderDetails', { providerId });
-                    } else {
-                      Alert.alert('Error', 'Provider information not available');
-                    }
+                    if (providerId) navigation.navigate('ProviderDetails', { providerId });
+                    else Alert.alert('Error', 'Provider information not available');
                   }}
                   activeOpacity={0.7}
                 >
@@ -473,35 +557,223 @@ export const ServiceDetailsScreen: React.FC = () => {
               <Text style={styles.providerUnavailable}>Provider information not available</Text>
             )}
           </View>
+
+          {/* Reviews Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="star" size={20} color={COLORS.text.primary} />
+              <Text style={styles.sectionTitle}>Ratings & Reviews</Text>
+
+              <View style={{ flex: 1 }} />
+
+              <TouchableOpacity
+                onPress={() => loadReviews(serviceId)}
+                activeOpacity={0.7}
+                style={styles.refreshMini}
+              >
+                <Ionicons name="refresh" size={18} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Summary card */}
+            <View style={styles.reviewSummaryCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={styles.reviewSummaryLeft}>
+                  <Text style={styles.reviewAvgText}>{avg ? avg.toFixed(1) : '0.0'}</Text>
+                  {renderStars(avg, 16)}
+                  <Text style={styles.reviewCountText}>{total} review{total === 1 ? '' : 's'}</Text>
+                </View>
+
+                <View style={styles.reviewSummaryRight}>
+                  {reviewStats ? (
+                    <>
+                      <View style={styles.barRow}>
+                        <Text style={styles.barLabel}>5</Text>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                width:
+                                  total > 0
+                                    ? `${(reviewStats.five_star_count / total) * 100}%`
+                                    : '0%',
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.barCount}>{reviewStats.five_star_count}</Text>
+                      </View>
+                      <View style={styles.barRow}>
+                        <Text style={styles.barLabel}>4</Text>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                width:
+                                  total > 0
+                                    ? `${(reviewStats.four_star_count / total) * 100}%`
+                                    : '0%',
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.barCount}>{reviewStats.four_star_count}</Text>
+                      </View>
+                      <View style={styles.barRow}>
+                        <Text style={styles.barLabel}>3</Text>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                width:
+                                  total > 0
+                                    ? `${(reviewStats.three_star_count / total) * 100}%`
+                                    : '0%',
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.barCount}>{reviewStats.three_star_count}</Text>
+                      </View>
+                      <View style={styles.barRow}>
+                        <Text style={styles.barLabel}>2</Text>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                width:
+                                  total > 0
+                                    ? `${(reviewStats.two_star_count / total) * 100}%`
+                                    : '0%',
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.barCount}>{reviewStats.two_star_count}</Text>
+                      </View>
+                      <View style={styles.barRow}>
+                        <Text style={styles.barLabel}>1</Text>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                width:
+                                  total > 0
+                                    ? `${(reviewStats.one_star_count / total) * 100}%`
+                                    : '0%',
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.barCount}>{reviewStats.one_star_count}</Text>
+                      </View>
+                    </>
+                  ) : (
+                    <Text style={styles.reviewSummaryPlaceholder}>No stats</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {reviewsLoading ? (
+              <View style={styles.reviewsLoading}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={styles.reviewsLoadingText}>Loading reviews...</Text>
+              </View>
+            ) : reviewsErr ? (
+              <View style={styles.reviewsErrorBox}>
+                <Ionicons name="alert-circle" size={18} color={COLORS.danger} />
+                <Text style={styles.reviewsErrorText}>{reviewsErr}</Text>
+              </View>
+            ) : reviews.length === 0 ? (
+              <View style={styles.emptyReviews}>
+                <Ionicons name="chatbubble-ellipses-outline" size={24} color={COLORS.text.light} />
+                <Text style={styles.emptyReviewsText}>No reviews yet</Text>
+              </View>
+            ) : (
+              <View style={{ gap: 12 }}>
+                {reviews.map((r) => {
+                  const first = r.customer_first_name || 'User';
+                  const last = r.customer_last_name || '';
+                  const name = `${first} ${last}`.trim();
+                  const avatar = r.customer_profile_image || null;
+
+                  return (
+                    <View key={r.id} style={styles.reviewCard}>
+                      <View style={styles.reviewHeader}>
+                        {avatar ? (
+                          <Image source={{ uri: avatar }} style={styles.reviewAvatar} />
+                        ) : (
+                          <LinearGradient
+                            colors={[COLORS.primary, COLORS.secondary]}
+                            style={styles.reviewAvatarFallback}
+                          >
+                            <Text style={styles.reviewAvatarText}>{initialsFrom(first, last)}</Text>
+                          </LinearGradient>
+                        )}
+
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.reviewerName}>{name}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            {renderStars(r.rating, 14)}
+                            <Text style={styles.reviewDate}>{formatDate(r.created_at)}</Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {!!r.comment && <Text style={styles.reviewComment}>{r.comment}</Text>}
+
+                      {/* Provider Response */}
+                      {r.provider_response ? (
+                        <View style={styles.providerResponseBox}>
+                          <View style={styles.providerResponseHeader}>
+                            <Ionicons name="storefront" size={14} color={COLORS.primary} />
+                            <Text style={styles.providerResponseTitle}>Provider Response</Text>
+                            <View style={{ flex: 1 }} />
+                            {!!r.provider_response_at && (
+                              <Text style={styles.providerResponseDate}>
+                                {formatDate(r.provider_response_at)}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={styles.providerResponseText}>{r.provider_response}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
         </View>
       </ScrollView>
 
-      {/* Fixed Bottom CTA */}
- {/* Fixed Bottom CTA */}
-<View style={styles.bottomSafe}>
-  <View style={styles.bottomContainer}>
-    <View style={styles.bottomPriceInfo}>
-      <Text style={styles.bottomPriceLabel}>Total</Text>
-      <Text style={styles.bottomPrice}>QAR {priceText}</Text>
-    </View>
-    
-    <TouchableOpacity 
-      style={styles.bookButton} 
-      onPress={onBookPress}
-      activeOpacity={0.8}
-    >
-      <LinearGradient
-        colors={[COLORS.primary, COLORS.secondary]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.bookButtonGradient}
-      >
-        <Text style={styles.bookButtonText}>Book Now</Text>
-        <Ionicons name="arrow-forward" size={20} color="#FFF" />
-      </LinearGradient>
-    </TouchableOpacity>
-  </View>
-</View>
+      {/* Fixed Bottom CTA - FIXED TO ALWAYS BE VISIBLE */}
+      <SafeAreaView style={styles.bottomSafe} edges={['bottom']}>
+        <View style={styles.bottomContainer}>
+          <View style={styles.bottomPriceInfo}>
+            <Text style={styles.bottomPriceLabel}>Total</Text>
+            <Text style={styles.bottomPrice}>QAR {priceText}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.bookButton} onPress={onBookPress} activeOpacity={0.8}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.bookButtonGradient}
+            >
+              <Text style={styles.bookButtonText}>Book Now</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
       {/* Auth Modal */}
       <AuthModal
@@ -514,454 +786,294 @@ export const ServiceDetailsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-
-  // Loading & Error
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
-  },
-  errorIconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  errorTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.danger,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  retryButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  retryButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    gap: 8,
-  },
-  retryButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  // Header
-  headerSafe: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background.primary },
+  headerSafe: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20 },
   header: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
   headerButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  headerActions: { flexDirection: 'row', gap: 10 },
 
-  // Scroll
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: Platform.OS === 'ios' ? 180 : 140,
-  },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingBottom: 280 }, // Increased to prevent overlap
 
-  // Hero Gallery
-  heroContainer: {
-    height: HERO_HEIGHT,
-    backgroundColor: '#F3F4F6',
-  },
-  gallery: {
-    width: '100%',
-    height: HERO_HEIGHT,
-  },
-  imageSlide: {
-    width: SCREEN_WIDTH,
-    height: HERO_HEIGHT,
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
+  heroContainer: { height: HERO_HEIGHT, backgroundColor: '#fff' },
+  gallery: { height: HERO_HEIGHT },
+  imageSlide: { width: SCREEN_WIDTH, height: HERO_HEIGHT },
+  heroImage: { width: '100%', height: '100%' },
   imageFallback: {
     width: '100%',
-    height: '100%',
-    alignItems: 'center',
+    height: HERO_HEIGHT,
     justifyContent: 'center',
-    gap: 12,
+    alignItems: 'center',
+    gap: 8,
   },
-  noImageText: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
-  },
+  noImageText: { color: COLORS.text.secondary, fontSize: 14 },
+
   pagination: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 14,
     left: 0,
     right: 0,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   paginationDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.55)',
   },
-  paginationDotActive: {
-    width: 24,
-    backgroundColor: '#FFFFFF',
-  },
+  paginationDotActive: { width: 18, backgroundColor: 'rgba(255,255,255,0.95)' },
 
-  // Content
-  content: {
-    padding: 20,
-  },
+  content: { paddingHorizontal: 16, paddingTop: 14, gap: 14 },
 
-  // Title Card
   titleCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: COLORS.text.primary,
-    marginBottom: 12,
-    lineHeight: 32,
-  },
-  priceContainer: {
-    gap: 6,
-  },
-  priceLabel: {
-    fontSize: 12,
-    color: COLORS.text.secondary,
-    fontWeight: '600',
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  price: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
+  title: { fontSize: 20, fontWeight: '800', color: COLORS.text.primary, marginBottom: 6 },
+
+  ratingSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  ratingSummaryText: { color: COLORS.text.secondary, fontSize: 13, fontWeight: '600' },
+
+  priceContainer: { gap: 4 },
+  priceLabel: { color: COLORS.text.secondary, fontSize: 13, fontWeight: '600' },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  price: { fontSize: 22, fontWeight: '900', color: COLORS.text.primary },
   priceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 10,
-    gap: 4,
+    borderRadius: 999,
   },
-  priceBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#10B981',
-  },
+  priceBadgeText: { color: '#10B981', fontWeight: '800', fontSize: 12 },
 
-  // Quick Info
   quickInfoCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  quickInfoItem: {
-    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
   },
+  quickInfoItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   quickInfoIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickInfoLabel: {
-    fontSize: 12,
-    color: COLORS.text.secondary,
-    marginBottom: 2,
-  },
-  quickInfoValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.text.primary,
-  },
-  quickInfoDivider: {
-    width: 1,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 16,
-  },
-
-  // Section
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text.primary,
-  },
-  description: {
-    fontSize: 15,
-    color: COLORS.text.secondary,
-    lineHeight: 24,
-  },
-
-  // Addons
-  addonsList: {
-    gap: 12,
-  },
-  addonCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  addonName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text.primary,
-    marginBottom: 4,
-  },
-  addonDescription: {
-    fontSize: 13,
-    color: COLORS.text.secondary,
-    lineHeight: 18,
-  },
-  addonPriceContainer: {
-    alignItems: 'flex-end',
-  },
-  addonPriceLabel: {
-    fontSize: 11,
-    color: COLORS.text.secondary,
-    marginBottom: 2,
-  },
-  addonPrice: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
-
-  // Provider
-  providerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  providerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  providerAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  providerAvatarPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerAvatarText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  providerName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text.primary,
-    marginBottom: 4,
-  },
-  providerLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  providerLocationText: {
-    fontSize: 13,
-    color: COLORS.text.secondary,
-  },
-  providerDescription: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  contactInfo: {
-    gap: 8,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    marginBottom: 15,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  contactText: {
-    fontSize: 13,
-    color: COLORS.text.secondary,
-  },
-  viewProfileButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 14,
     backgroundColor: '#EFF6FF',
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  viewProfileText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  providerUnavailable: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
-    fontStyle: 'italic',
-  },
+  quickInfoLabel: { color: COLORS.text.secondary, fontSize: 12, fontWeight: '700' },
+  quickInfoValue: { color: COLORS.text.primary, fontSize: 14, fontWeight: '800', marginTop: 2 },
+  quickInfoDivider: { width: 1, height: 42, backgroundColor: '#E5E7EB', marginHorizontal: 10 },
 
-  // Bottom CTA
-// Bottom CTA
-bottomSafe: {
-  position: 'absolute',
-  bottom: 0,
-  left: 0,
-  right: 0,
-  backgroundColor: '#FFFFFF',
-  borderTopWidth: 1,
-  borderTopColor: '#E5E7EB',
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: -4 },
-  shadowOpacity: 0.1,
-  shadowRadius: 8,
-  elevation: 10,
-},
-bottomContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 16,
-  paddingTop: 16,
-  paddingBottom: Platform.OS === 'ios' ? 100 : 100, // Accounts for tab bar + safe area
-  gap: 16,
-},
-bottomPriceInfo: {
-  flex: 1,
-},
-bottomPriceLabel: {
-  fontSize: 12,
-  color: COLORS.text.secondary,
-  marginBottom: 2,
-},
-bottomPrice: {
-  fontSize: 24,
-  fontWeight: '800',
-  color: COLORS.text.primary,
-},
-bookButton: {
-  borderRadius: 16,
-  overflow: 'hidden',
-  shadowColor: COLORS.primary,
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.3,
-  shadowRadius: 8,
-  elevation: 5,
-},
-bookButtonGradient: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 32,
-  paddingVertical: 16,
-  gap: 8,
-},
-bookButtonText: {
-  fontSize: 16,
-  fontWeight: '700',
-  color: '#FFFFFF',
-},
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: COLORS.text.primary },
+  description: { color: COLORS.text.secondary, fontSize: 14, lineHeight: 20 },
+
+  addonsList: { gap: 10 },
+  addonCard: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  addonName: { fontSize: 14, fontWeight: '900', color: COLORS.text.primary },
+  addonDescription: { fontSize: 13, color: COLORS.text.secondary, marginTop: 4 },
+  addonPriceContainer: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  addonPriceLabel: { color: COLORS.text.secondary, fontWeight: '800', fontSize: 12 },
+  addonPrice: { color: COLORS.text.primary, fontWeight: '900', fontSize: 16 },
+
+  providerCard: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 18, padding: 14, gap: 10 },
+  providerHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  providerAvatar: { width: 54, height: 54, borderRadius: 16, backgroundColor: '#F3F4F6' },
+  providerAvatarPlaceholder: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  providerAvatarText: { color: '#fff', fontWeight: '900', fontSize: 18 },
+  providerName: { fontSize: 15, fontWeight: '900', color: COLORS.text.primary },
+  providerLocation: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  providerLocationText: { color: COLORS.text.secondary, fontSize: 12, fontWeight: '600' },
+  providerDescription: { color: COLORS.text.secondary, fontSize: 13, lineHeight: 19 },
+  contactInfo: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  contactItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  contactText: { color: COLORS.text.secondary, fontSize: 13, fontWeight: '600' },
+  viewProfileButton: {
+    marginTop: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  viewProfileText: { color: COLORS.primary, fontWeight: '900', fontSize: 14 },
+  providerUnavailable: { color: COLORS.text.secondary, fontSize: 13 },
+
+  // Reviews
+  refreshMini: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewSummaryCard: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  reviewSummaryLeft: { width: 120, alignItems: 'flex-start', gap: 6 },
+  reviewAvgText: { fontSize: 28, fontWeight: '900', color: COLORS.text.primary },
+  reviewCountText: { color: COLORS.text.secondary, fontSize: 12, fontWeight: '700' },
+  reviewSummaryRight: { flex: 1, gap: 8 },
+  reviewSummaryPlaceholder: { color: COLORS.text.secondary, fontWeight: '700' },
+
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  barLabel: { width: 12, color: COLORS.text.secondary, fontWeight: '800' },
+  barTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 99,
+    backgroundColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  barFill: { height: '100%', backgroundColor: '#F59E0B' },
+  barCount: { width: 26, textAlign: 'right', color: COLORS.text.secondary, fontWeight: '800' },
+
+  reviewsLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 6 },
+  reviewsLoadingText: { color: COLORS.text.secondary, fontWeight: '700' },
+  reviewsErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  reviewsErrorText: { color: COLORS.danger, fontWeight: '800', flex: 1 },
+
+  emptyReviews: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
+  emptyReviewsText: { color: COLORS.text.secondary, fontWeight: '800' },
+
+  reviewCard: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: '#fff',
+    gap: 10,
+  },
+  reviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reviewAvatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F4F6' },
+  reviewAvatarFallback: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  reviewAvatarText: { color: '#fff', fontWeight: '900' },
+  reviewerName: { color: COLORS.text.primary, fontWeight: '900', fontSize: 14 },
+  reviewDate: { color: COLORS.text.secondary, fontSize: 12, fontWeight: '700' },
+  reviewComment: { color: COLORS.text.secondary, fontSize: 13, lineHeight: 19 },
+
+  providerResponseBox: {
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    padding: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  providerResponseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  providerResponseTitle: { color: COLORS.primary, fontWeight: '900', fontSize: 13 },
+  providerResponseDate: { color: COLORS.text.secondary, fontWeight: '700', fontSize: 12 },
+  providerResponseText: { color: COLORS.text.secondary, fontSize: 13, lineHeight: 19 },
+
+  // Fixed bottom CTA - now always visible
+  bottomSafe: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 70,
+    zIndex: 30,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  bottomContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  bottomPriceInfo: { flex: 1 },
+  bottomPriceLabel: { color: COLORS.text.secondary, fontWeight: '700', fontSize: 12 },
+  bottomPrice: { color: COLORS.text.primary, fontWeight: '900', fontSize: 18, marginTop: 2 },
+
+  bookButton: { width: 160, borderRadius: 16, overflow: 'hidden' },
+  bookButtonGradient: { paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  bookButtonText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  loadingText: { color: COLORS.text.secondary, fontWeight: '700' },
+
+  errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, gap: 14 },
+  errorIconContainer: { width: 80, height: 80, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  errorTitle: { textAlign: 'center', color: COLORS.text.primary, fontWeight: '900', fontSize: 16 },
+  retryButton: { width: '70%', borderRadius: 16, overflow: 'hidden' },
+  retryButtonGradient: { paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  retryButtonText: { color: '#fff', fontWeight: '900' },
 });

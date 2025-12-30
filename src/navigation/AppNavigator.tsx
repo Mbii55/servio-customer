@@ -23,6 +23,7 @@ import { ServiceDetailsScreen } from '../screens/home/ServiceDetailsScreen';
 import { FavoritesScreen } from '../screens/favorites/FavoritesScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { ProviderDetailsScreen } from '../screens/home/ProviderDetailsScreen';
+import { ReviewScreen } from '../screens/bookings/ReviewScreen'; // ✅ NEW IMPORT
 
 import { COLORS } from '../constants/colors';
 
@@ -260,6 +261,7 @@ function ProfileStackNavigator() {
   );
 }
 
+// ✅ UPDATED: Added Review screen to BookingsStack
 function BookingsStackNavigator() {
   return (
     <BookingsStack.Navigator>
@@ -274,6 +276,16 @@ function BookingsStackNavigator() {
         options={{ 
           headerShown: false,
           animation: 'slide_from_bottom'
+        }}
+      />
+      {/* ✅ NEW: Review Screen */}
+      <BookingsStack.Screen
+        name="Review"
+        component={ReviewScreen}
+        options={{ 
+          headerShown: false,
+          animation: 'slide_from_bottom',
+          presentation: 'modal', // Slides up from bottom on iOS
         }}
       />
     </BookingsStack.Navigator>

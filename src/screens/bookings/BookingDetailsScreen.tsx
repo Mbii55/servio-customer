@@ -1,5 +1,5 @@
 // src/screens/bookings/BookingDetailsScreen.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { COLORS, SIZES } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
 import { AuthModal } from '../../components/auth/AuthModal';
 import { cancelBooking, getBookingById, BookingStatus } from '../../services/bookings';
+import api from '../../services/api';
 
 type Params = { bookingId: string };
 
@@ -82,6 +83,10 @@ export const BookingDetailsScreen: React.FC = () => {
   const [err, setErr] = useState<string | null>(null);
   const [booking, setBooking] = useState<any | null>(null);
 
+  // Review eligibility state
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [canReview, setCanReview] = useState(false);
+
   const load = async () => {
     setErr(null);
     setLoading(true);
@@ -96,6 +101,19 @@ export const BookingDetailsScreen: React.FC = () => {
     }
   };
 
+  const checkCanReview = async () => {
+    if (!bookingId) return;
+    try {
+      setReviewLoading(true);
+      const res = await api.get(`/reviews/can-review/${bookingId}`);
+      setCanReview(!!res.data?.canReview);
+    } catch {
+      setCanReview(false); // safest default
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       setShowAuthModal(true);
@@ -105,44 +123,64 @@ export const BookingDetailsScreen: React.FC = () => {
     load();
   }, [isAuthenticated, bookingId]);
 
+  // Check review eligibility when booking is loaded and completed
+  useEffect(() => {
+    const status: BookingStatus = (booking?.status as BookingStatus) || 'pending';
+    if (isAuthenticated && booking && status === 'completed') {
+      checkCanReview();
+    } else {
+      setCanReview(false);
+    }
+  }, [isAuthenticated, booking?.id, booking?.status]);
+
   const status: BookingStatus = (booking?.status as BookingStatus) || 'pending';
   const config = statusConfig(status);
 
   const serviceTitle = booking?.service_title || booking?.service?.title || 'Service';
-  const providerName = booking?.provider_business_name || booking?.provider?.business_name || 'Provider';
+  const providerName =
+    booking?.provider_business_name || booking?.provider?.business_name || 'Provider';
   const providerLogo = booking?.provider_business_logo || booking?.provider?.business_logo || null;
 
-const canCancel =
-  (user?.role === 'customer' || user?.role === 'admin') &&
-  (status === 'pending' || status === 'accepted');
+  const canCancel =
+    (user?.role === 'customer' || user?.role === 'admin') &&
+    (status === 'pending' || status === 'accepted');
 
   const onCancel = () => {
-    Alert.alert(
-      'Cancel Booking',
-      'Are you sure you want to cancel this booking?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              const updated = await cancelBooking(bookingId, 'Cancelled by customer');
-              setBooking(updated);
-            } catch (e: any) {
-              Alert.alert(
-                'Error',
-                e?.response?.data?.message || e?.message || 'Failed to cancel booking'
-              );
-            } finally {
-              setLoading(false);
-            }
-          },
+    Alert.alert('Cancel Booking', 'Are you sure you want to cancel this booking?', [
+      { text: 'No', style: 'cancel' },
+      {
+        text: 'Yes, Cancel',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setLoading(true);
+            const updated = await cancelBooking(bookingId, 'Cancelled by customer');
+            setBooking(updated);
+          } catch (e: any) {
+            Alert.alert(
+              'Error',
+              e?.response?.data?.message || e?.message || 'Failed to cancel booking'
+            );
+          } finally {
+            setLoading(false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
+
+  const onGoToReview = () => {
+    navigation.navigate('Review', {
+      bookingId: booking.id,
+      bookingNumber: booking.booking_number || booking.id,
+      serviceTitle,
+      providerName,
+    });
+  };
+
+  // Derived states for review UI
+  const isCompleted = status === 'completed';
+  const alreadyReviewed = isCompleted && !canReview && !reviewLoading;
 
   if (!isAuthenticated) {
     return (
@@ -307,10 +345,7 @@ const canCancel =
 
         {/* Pricing Card */}
         <View style={styles.pricingCard}>
-          <LinearGradient
-            colors={['#F9FAFB', '#FFFFFF'] as const}
-            style={styles.pricingGradient}
-          >
+          <LinearGradient colors={['#F9FAFB', '#FFFFFF'] as const} style={styles.pricingGradient}>
             <View style={styles.cardHeader}>
               <Ionicons name="cash" size={20} color={COLORS.primary} />
               <Text style={styles.cardHeaderText}>Payment Details</Text>
@@ -341,7 +376,12 @@ const canCancel =
                 </Text>
               </View>
               <View style={styles.paymentStatus}>
-                <View style={[styles.paymentStatusDot, { backgroundColor: booking.payment_status === 'paid' ? '#10B981' : '#F59E0B' }]} />
+                <View
+                  style={[
+                    styles.paymentStatusDot,
+                    { backgroundColor: booking.payment_status === 'paid' ? '#10B981' : '#F59E0B' },
+                  ]}
+                />
                 <Text style={styles.paymentStatusText}>
                   {humanStatus(booking.payment_status || 'pending')}
                 </Text>
@@ -385,18 +425,54 @@ const canCancel =
         )}
 
         {/* Actions */}
-        {canCancel && (
-          <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-            <View style={styles.cancelButtonContent}>
-              <Ionicons name="close-circle-outline" size={20} color={COLORS.danger} />
-              <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+        <View style={styles.actionsContainer}>
+          {/* Review Section: Button, Badge, or Loader */}
+          {isCompleted && (
+            <View style={styles.reviewActionContainer}>
+              {reviewLoading ? (
+                <View style={styles.reviewLoading}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.reviewLoadingText}>Checking review status...</Text>
+                </View>
+              ) : canReview ? (
+                <TouchableOpacity
+                  style={styles.reviewButton}
+                  onPress={onGoToReview}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={['#F59E0B', '#D97706'] as const}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.reviewButtonGradient}
+                  >
+                    <Ionicons name="star" size={18} color="#FFF" />
+                    <Text style={styles.reviewButtonText}>Write Review</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : alreadyReviewed ? (
+                <View style={styles.reviewedBadge}>
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  <Text style={styles.reviewedBadgeText}>Reviewed</Text>
+                </View>
+              ) : null}
             </View>
-          </TouchableOpacity>
-        )}
+          )}
+
+          {canCancel && (
+            <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+              <View style={styles.cancelButtonContent}>
+                <Ionicons name="close-circle-outline" size={20} color={COLORS.danger} />
+                <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -763,4 +839,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.danger,
   },
+  reviewActionContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+
+  reviewLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 10,
+  },
+  reviewLoadingText: {
+    color: COLORS.text.secondary,
+    fontSize: 14,
+  },
+
+  // New: Reviewed badge (same style as in BookingsScreen)
+  reviewedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 10,
+  },
+  reviewedBadgeText: {
+    color: '#065F46',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  actionsContainer: { marginTop: 4 },
+
+  reviewButton: { borderRadius: 16, overflow: 'hidden', marginTop: 10 },
+  reviewButtonGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  reviewButtonText: { color: '#FFF', fontWeight: '900', fontSize: 14 },
 });

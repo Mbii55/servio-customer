@@ -552,4 +552,58 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     textTransform: 'uppercase',
   },
+
+  // ⭐ Rating badge (top-right on image)
+ratingBadge: {
+  position: 'absolute',
+  top: 12,
+  right: 12,
+  borderRadius: 12,
+  backgroundColor: 'rgba(17, 24, 39, 0.75)', // dark overlay
+  overflow: 'hidden',
+},
+
+ratingBadgeContent: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 8,
+  paddingVertical: 5,
+  gap: 4,
+},
+
+ratingBadgeText: {
+  fontSize: 12,
+  fontWeight: '800',
+  color: '#FFFFFF',
+},
+
+ratingBadgeCount: {
+  fontSize: 11,
+  fontWeight: '600',
+  color: 'rgba(255,255,255,0.85)',
+},
+
+// ⭐ Compact rating badge
+compactRatingBadge: {
+  position: 'absolute',
+  top: 10,
+  right: 10,
+  backgroundColor: 'rgba(17, 24, 39, 0.75)',
+  paddingHorizontal: 8,
+  paddingVertical: 5,
+  borderRadius: 10,
+},
+
+compactRatingBadgeContent: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 4,
+},
+
+compactRatingText: {
+  fontSize: 11,
+  fontWeight: '800',
+  color: '#FFFFFF',
+},
+
 });

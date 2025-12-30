@@ -20,6 +20,7 @@ import { COLORS, SIZES } from '../../constants/colors';
 
 import { getMyBookings } from '../../services/bookings';
 import { Booking } from '../../types';
+import api from '../../services/api';
 
 type BookingStatus =
   | 'pending'
@@ -50,12 +51,47 @@ export const BookingsScreen: React.FC = () => {
 
   const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
 
+  // review eligibility: bookingId -> canReview (true = eligible to review)
+  const [reviewEligibility, setReviewEligibility] = useState<Record<string, boolean>>({});
+  const [eligibilityLoading, setEligibilityLoading] = useState<Record<string, boolean>>({});
+
+  const loadReviewEligibilityForCompleted = async (list: BookingWithDetails[]) => {
+    const completed = list.filter((b) => (b.status as BookingStatus) === 'completed');
+    if (completed.length === 0) return;
+
+    try {
+      const loadingFlags: Record<string, boolean> = {};
+      completed.forEach((b) => (loadingFlags[b.id] = true));
+      setEligibilityLoading((prev) => ({ ...prev, ...loadingFlags }));
+
+      const updates: Record<string, boolean> = {};
+      await Promise.all(
+        completed.map(async (b) => {
+          try {
+            const res = await api.get(`/reviews/can-review/${b.id}`);
+            updates[b.id] = !!res.data?.canReview;
+          } catch {
+            updates[b.id] = false;
+          }
+        })
+      );
+
+      setReviewEligibility((prev) => ({ ...prev, ...updates }));
+    } finally {
+      const cleared: Record<string, boolean> = {};
+      completed.forEach((b) => (cleared[b.id] = false));
+      setEligibilityLoading((prev) => ({ ...prev, ...cleared }));
+    }
+  };
+
   const loadBookings = async () => {
     setErr(null);
     setLoading(true);
     try {
       const data = await getMyBookings();
-      setBookings(Array.isArray(data) ? (data as BookingWithDetails[]) : []);
+      const list = Array.isArray(data) ? (data as BookingWithDetails[]) : [];
+      setBookings(list);
+      await loadReviewEligibilityForCompleted(list);
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || 'Failed to load bookings');
     } finally {
@@ -68,7 +104,9 @@ export const BookingsScreen: React.FC = () => {
     setRefreshing(true);
     try {
       const data = await getMyBookings();
-      setBookings(Array.isArray(data) ? (data as BookingWithDetails[]) : []);
+      const list = Array.isArray(data) ? (data as BookingWithDetails[]) : [];
+      setBookings(list);
+      await loadReviewEligibilityForCompleted(list);
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || 'Failed to load bookings');
     } finally {
@@ -110,44 +148,39 @@ export const BookingsScreen: React.FC = () => {
     return `${value ?? ''}`;
   };
 
-  const formatStatus = (s: string) => {
-    const x = (s || '').replace('_', ' ');
-    return x.charAt(0).toUpperCase() + x.slice(1);
-  };
-
   const statusConfig = (status: BookingStatus) => {
     switch (status) {
       case 'completed':
-        return { 
+        return {
           colors: ['#10B981', '#059669'] as const,
           icon: 'checkmark-circle' as const,
-          label: 'Completed'
+          label: 'Completed',
         };
       case 'cancelled':
       case 'rejected':
-        return { 
+        return {
           colors: ['#EF4444', '#DC2626'] as const,
           icon: 'close-circle' as const,
-          label: status === 'cancelled' ? 'Cancelled' : 'Rejected'
+          label: status === 'cancelled' ? 'Cancelled' : 'Rejected',
         };
       case 'in_progress':
-        return { 
+        return {
           colors: ['#8B5CF6', '#7C3AED'] as const,
           icon: 'play-circle' as const,
-          label: 'In Progress'
+          label: 'In Progress',
         };
       case 'accepted':
-        return { 
+        return {
           colors: [COLORS.primary, COLORS.secondary] as const,
           icon: 'checkmark-done' as const,
-          label: 'Accepted'
+          label: 'Accepted',
         };
       case 'pending':
       default:
-        return { 
+        return {
           colors: ['#F59E0B', '#D97706'] as const,
           icon: 'time' as const,
-          label: 'Pending'
+          label: 'Pending',
         };
     }
   };
@@ -172,13 +205,10 @@ export const BookingsScreen: React.FC = () => {
 
         {/* Guest State */}
         <View style={styles.emptyContainer}>
-          <LinearGradient
-            colors={['#EFF6FF', '#DBEAFE']}
-            style={styles.emptyIconContainer}
-          >
+          <LinearGradient colors={['#EFF6FF', '#DBEAFE']} style={styles.emptyIconContainer}>
             <Ionicons name="calendar-outline" size={48} color={COLORS.primary} />
           </LinearGradient>
-          
+
           <Text style={styles.emptyTitle}>Sign in to view bookings</Text>
           <Text style={styles.emptySubtitle}>
             Track your upcoming services and view your complete booking history
@@ -201,11 +231,7 @@ export const BookingsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        <AuthModal
-          visible={showAuthModal}
-          onClose={() => setShowAuthModal(false)}
-          initialMode="login"
-        />
+        <AuthModal visible={showAuthModal} onClose={() => setShowAuthModal(false)} initialMode="login" />
       </SafeAreaView>
     );
   }
@@ -219,11 +245,7 @@ export const BookingsScreen: React.FC = () => {
           <Text style={styles.headerSubtitle}>{countText}</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={onRefresh}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh} activeOpacity={0.7}>
           <Ionicons name="refresh" size={22} color={COLORS.text.primary} />
         </TouchableOpacity>
       </View>
@@ -232,7 +254,7 @@ export const BookingsScreen: React.FC = () => {
       <View style={styles.tabsContainer}>
         {(['Upcoming', 'Completed', 'Cancelled'] as TabKey[]).map((tab) => {
           const active = tab === activeTab;
-          const count = bookings.filter(b => {
+          const count = bookings.filter((b) => {
             const status = (b.status as BookingStatus) || 'pending';
             if (tab === 'Upcoming') {
               return ['pending', 'accepted', 'in_progress'].includes(status);
@@ -283,8 +305,8 @@ export const BookingsScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
@@ -298,33 +320,23 @@ export const BookingsScreen: React.FC = () => {
           </View>
         ) : err ? (
           <View style={styles.emptyContainer}>
-            <LinearGradient
-              colors={['#FEF2F2', '#FEE2E2']}
-              style={styles.emptyIconContainer}
-            >
+            <LinearGradient colors={['#FEF2F2', '#FEE2E2']} style={styles.emptyIconContainer}>
               <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
             </LinearGradient>
-            
+
             <Text style={[styles.emptyTitle, { color: COLORS.danger }]}>{err}</Text>
-            
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={loadBookings}
-              activeOpacity={0.8}
-            >
+
+            <TouchableOpacity style={styles.retryButton} onPress={loadBookings} activeOpacity={0.8}>
               <Ionicons name="refresh" size={18} color={COLORS.primary} />
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : filtered.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <LinearGradient
-              colors={['#EFF6FF', '#DBEAFE']}
-              style={styles.emptyIconContainer}
-            >
+            <LinearGradient colors={['#EFF6FF', '#DBEAFE']} style={styles.emptyIconContainer}>
               <Ionicons name="calendar-outline" size={48} color={COLORS.primary} />
             </LinearGradient>
-            
+
             <Text style={styles.emptyTitle}>No {activeTab.toLowerCase()} bookings</Text>
             <Text style={styles.emptySubtitle}>
               {activeTab === 'Upcoming'
@@ -356,6 +368,11 @@ export const BookingsScreen: React.FC = () => {
               const status = (booking.status as BookingStatus) || 'pending';
               const config = statusConfig(status);
 
+              const isCompleted = status === 'completed';
+              const canReview = reviewEligibility[booking.id] === true;
+              const alreadyReviewed = isCompleted && reviewEligibility[booking.id] === false;
+              const loadingEligibility = eligibilityLoading[booking.id];
+
               return (
                 <TouchableOpacity
                   key={booking.id}
@@ -367,10 +384,7 @@ export const BookingsScreen: React.FC = () => {
                   <View style={styles.cardHeader}>
                     <View style={styles.providerInfo}>
                       {booking.provider_business_logo ? (
-                        <Image 
-                          source={{ uri: booking.provider_business_logo }} 
-                          style={styles.providerAvatar} 
-                        />
+                        <Image source={{ uri: booking.provider_business_logo }} style={styles.providerAvatar} />
                       ) : (
                         <View style={styles.providerAvatarPlaceholder}>
                           <Ionicons name="storefront" size={20} color={COLORS.primary} />
@@ -424,19 +438,50 @@ export const BookingsScreen: React.FC = () => {
                       <View style={styles.detailIconContainer}>
                         <Ionicons name="cash" size={14} color={COLORS.primary} />
                       </View>
-                      <Text style={styles.detailTextBold}>
-                        QAR {formatMoney(booking.subtotal)}
-                      </Text>
+                      <Text style={styles.detailTextBold}>QAR {formatMoney(booking.subtotal)}</Text>
                     </View>
                   </View>
 
                   {/* Footer */}
                   <View style={styles.cardFooter}>
                     <Text style={styles.bookingNumber}>#{booking.booking_number}</Text>
-                    
-                    <View style={styles.viewDetailsButton}>
-                      <Text style={styles.viewDetailsText}>View Details</Text>
-                      <Ionicons name="arrow-forward" size={14} color={COLORS.primary} />
+
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      {/* Review Button or Reviewed Badge */}
+                      {isCompleted && (
+                        <>
+                          {loadingEligibility ? (
+                            <ActivityIndicator size="small" color={COLORS.primary} />
+                          ) : canReview ? (
+                            <TouchableOpacity
+                              style={styles.reviewButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                navigation.navigate('Review', {
+                                  bookingId: booking.id,
+                                  bookingNumber: booking.booking_number,
+                                  serviceTitle: booking.service_title || 'Service',
+                                  providerName: booking.provider_business_name || 'Provider',
+                                });
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons name="star" size={14} color="#F59E0B" />
+                              <Text style={styles.reviewButtonText}>Review</Text>
+                            </TouchableOpacity>
+                          ) : alreadyReviewed ? (
+                            <View style={styles.reviewedBadge}>
+                              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                              <Text style={styles.reviewedBadgeText}>Reviewed</Text>
+                            </View>
+                          ) : null}
+                        </>
+                      )}
+
+                      <View style={styles.viewDetailsButton}>
+                        <Text style={styles.viewDetailsText}>View Details</Text>
+                        <Ionicons name="arrow-forward" size={14} color={COLORS.primary} />
+                      </View>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -788,4 +833,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary,
   },
+    reviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  reviewButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400E',
+  },
+
+  reviewedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  reviewedBadgeText: {
+    color: '#065F46',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+
 });

@@ -22,7 +22,10 @@ import { COLORS, SIZES } from '../../constants/colors';
 type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
+  ForgotPassword: undefined;
+  ResetPassword: { token?: string; email?: string } | undefined;
 };
+
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
 
@@ -161,13 +164,13 @@ export const LoginScreen: React.FC = () => {
             </View>
 
             {/* Forgot Password */}
-            <TouchableOpacity 
-              style={styles.forgotPassword} 
-              activeOpacity={0.7}
-              onPress={() => Alert.alert('Forgot Password', 'This feature is coming soon!')}
-            >
-              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.forgotPassword}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("ForgotPassword")}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+              </TouchableOpacity>
 
             {/* Login Button */}
             <TouchableOpacity
