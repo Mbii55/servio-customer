@@ -74,6 +74,14 @@ export interface Booking {
   cancelled_at: string | null;
   created_at: string;
   updated_at: string;
+  // Optional nested objects from API response
+  address?: Address | null;
+  service?: Service;
+  provider?: ProviderSummary;
+  // Optional flattened properties from API response
+  service_title?: string;
+  provider_business_name?: string;
+  provider_business_logo?: string | null;
 }
 
 export interface Address {

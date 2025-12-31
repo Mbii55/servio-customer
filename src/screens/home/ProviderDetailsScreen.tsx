@@ -1,5 +1,5 @@
 // src/screens/home/ProviderDetailsScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,15 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SIZES } from '../../constants/colors';
-import api from '../../services/api';
 import { HomeStackParamList } from '../../navigation/types';
-import { getProviderFavoriteStatus, toggleProviderFavorite } from '../../services/favorites';
 import { useAuth } from '../../context/AuthContext';
+
+// ✅ NEW: Import React Query hooks
+import { useProvider } from '../../hooks/useProviders';
+import { useToggleProviderFavorite } from '../../hooks/useFavorites';
+import { usePrefetchService } from '../../hooks/useServices';
+import { useQuery } from '@tanstack/react-query';
+import api from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -77,69 +82,71 @@ export const ProviderDetailsScreen: React.FC = () => {
   const { providerId } = route.params;
   const { isAuthenticated } = useAuth();
 
-  const [provider, setProvider] = useState<Provider | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isProviderFavorite, setIsProviderFavorite] = useState(false);
-  
-  useEffect(() => {
-    fetchProviderDetails();
-  }, [providerId]);
-
-  useEffect(() => {
-    const loadFavoriteStatus = async () => {
-      if (!isAuthenticated) {
-        setIsProviderFavorite(false);
-        return;
-      }
-      try {
-        const status = await getProviderFavoriteStatus(providerId);
-        setIsProviderFavorite(status.is_favorite);
-      } catch (error) {
-        console.error('Error loading favorite status:', error);
-      }
-    };
-
-    if (provider) {
-      loadFavoriteStatus();
-    }
-  }, [isAuthenticated, providerId, provider]);
-
-  const fetchProviderDetails = async () => {
-    try {
-      setLoading(true);
+  // ✅ NEW: React Query hooks - replaces manual state management!
+  const { 
+    data: provider, 
+    isLoading: loading,
+    error: queryError 
+  } = useQuery({
+    queryKey: ['provider', providerId],
+    queryFn: async () => {
       const response = await api.get(`/users/providers/${providerId}`);
-      setProvider(response.data.provider);
-    } catch (error: any) {
-      console.error('Error fetching provider details:', error);
-      Alert.alert(
-        'Error',
-        error.response?.data?.error || 'Failed to load provider details',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+      return response.data.provider as Provider;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
+  // ✅ NEW: Get favorite status with React Query
+  const { data: favoriteData } = useQuery({
+    queryKey: ['favorites', 'provider', providerId],
+    queryFn: async () => {
+      if (!isAuthenticated) return { is_favorite: false };
+      try {
+        const res = await api.get(`/favorites/provider/status/${providerId}`);
+        return res.data as { is_favorite: boolean };
+      } catch {
+        return { is_favorite: false };
+      }
+    },
+    enabled: isAuthenticated && !!provider,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const isProviderFavorite = favoriteData?.is_favorite ?? false;
+
+  // ✅ NEW: Optimistic favorite toggle
+  const toggleFavoriteMutation = useToggleProviderFavorite();
+
+  // ✅ NEW: Prefetch service before navigation
+  const prefetchService = usePrefetchService();
+
+  // Handle error
+  if (queryError && !loading) {
+    Alert.alert(
+      'Error',
+      'Failed to load provider details',
+      [{ text: 'OK', onPress: () => navigation.goBack() }]
+    );
+  }
+
+  // ✅ IMPROVED: Optimistic favorite toggle (instant UI update)
   const handleToggleFavorite = async () => {
     if (!isAuthenticated) {
       Alert.alert('Login Required', 'Please login to save favorites');
       return;
     }
 
-    const previousState = isProviderFavorite;
-    setIsProviderFavorite(!previousState);
-
     try {
-      const result = await toggleProviderFavorite(providerId);
-      setIsProviderFavorite(result.is_favorite);
+      await toggleFavoriteMutation.mutateAsync(providerId);
+      // React Query handles optimistic update automatically!
     } catch (error: any) {
-      setIsProviderFavorite(previousState);
       Alert.alert('Error', error.response?.data?.message || 'Failed to update favorite');
     }
   };
 
   const handleServicePress = (serviceId: string) => {
+    // ✅ NEW: Prefetch service before navigation for instant load
+    prefetchService(serviceId);
     navigation.navigate('ServiceDetails', { serviceId });
   };
 
@@ -171,7 +178,7 @@ export const ProviderDetailsScreen: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading && !provider) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -214,12 +221,17 @@ export const ProviderDetailsScreen: React.FC = () => {
           <TouchableOpacity
             onPress={handleToggleFavorite}
             style={styles.headerButton}
+            disabled={toggleFavoriteMutation.isPending}
           >
-            <Ionicons
-              name={isProviderFavorite ? 'heart' : 'heart-outline'}
-              size={24}
-              color={isProviderFavorite ? '#EF4444' : COLORS.text.primary}
-            />
+            {toggleFavoriteMutation.isPending ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Ionicons
+                name={isProviderFavorite ? 'heart' : 'heart-outline'}
+                size={24}
+                color={isProviderFavorite ? '#EF4444' : COLORS.text.primary}
+              />
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -429,6 +441,7 @@ export const ProviderDetailsScreen: React.FC = () => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

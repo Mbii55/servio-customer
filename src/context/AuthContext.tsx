@@ -30,7 +30,7 @@ interface AuthContextData {
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
 const SUSPENDED_MESSAGE =
-  "Your account has been suspended due to suspicious activities. Please contact our support team at info@servio.com for assistance.";
+  "Your account has been suspended due to suspicious activities. Please contact our support team at for assistance.";
 
 const SUSPENDED_TITLE = "Account Suspended";
 

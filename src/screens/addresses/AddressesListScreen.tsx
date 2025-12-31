@@ -1,5 +1,5 @@
 // src/screens/addresses/AddressesListScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -14,81 +14,59 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { COLORS, SIZES } from '../../constants/colors';
-import {
-  getMyAddresses,
-  deleteAddress,
-  setDefaultAddress,
-  updateAddress,
-} from '../../services/addresses';
 import { Address } from '../../types';
+
+// ✅ NEW: Import React Query hooks
+import { 
+  useAddresses, 
+  useSetDefaultAddress, 
+  useDeleteAddress 
+} from '../../hooks/useAddresses';
 
 type NavProp = NativeStackNavigationProp<any>;
 
 export const AddressesListScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
 
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ✅ NEW: React Query hooks - replaces all manual state management!
+  const { 
+    data: addresses = [], 
+    isLoading: loading,
+    refetch 
+  } = useAddresses();
+
+  const setDefaultMutation = useSetDefaultAddress();
+  const deleteMutation = useDeleteAddress();
+
+  // ✅ SIMPLIFIED: Pull-to-refresh
   const [refreshing, setRefreshing] = useState(false);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadAddresses();
-    }, [])
-  );
-
-  const loadAddresses = async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const data = await getMyAddresses();
-      setAddresses(data);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to load addresses');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
   };
 
+  // ✅ IMPROVED: Optimistic set default (instant UI update)
   const handleSetDefault = async (addressId: string) => {
     try {
-      // Update UI optimistically
-      setAddresses(prevAddresses => 
-        prevAddresses.map(addr => ({
-          ...addr,
-          is_default: addr.id === addressId
-        }))
-      );
-      
-      // Update backend
-      await updateAddress(addressId, { is_default: true });
-      
-      // Refresh from server to ensure consistency
-      const freshData = await getMyAddresses();
-      setAddresses(freshData);
-      
+      await setDefaultMutation.mutateAsync(addressId);
+      // React Query handles optimistic update automatically!
       Alert.alert('Success', 'Default address updated');
     } catch (error: any) {
-      // On error, reload from server
-      await loadAddresses();
       Alert.alert(
-        'Error', 
-        error.response?.data?.message || 
-        error.response?.data?.error || 
+        'Error',
+        error.response?.data?.message ||
+        error.response?.data?.error ||
         'Failed to set default address'
       );
     }
   };
 
+  // ✅ IMPROVED: Optimistic delete (instant UI update)
   const handleDelete = async (address: Address) => {
     if (address.is_default) {
       Alert.alert(
@@ -108,8 +86,8 @@ export const AddressesListScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteAddress(address.id);
-              await loadAddresses();
+              await deleteMutation.mutateAsync(address.id);
+              // React Query handles optimistic removal automatically!
               Alert.alert('Success', 'Address deleted successfully');
             } catch (error: any) {
               Alert.alert('Error', error.response?.data?.error || 'Failed to delete address');
@@ -120,7 +98,7 @@ export const AddressesListScreen: React.FC = () => {
     );
   };
 
-  if (loading) {
+  if (loading && addresses.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -155,9 +133,9 @@ export const AddressesListScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={() => loadAddresses(true)}
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
           />

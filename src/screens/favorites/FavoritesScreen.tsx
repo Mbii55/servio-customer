@@ -1,5 +1,5 @@
 // src/screens/favorites/FavoritesScreen.tsx
-import React, { useCallback, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,21 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { COLORS, SIZES } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
-import { getMyFavorites, removeFavorite, removeProviderFavorite, FavoriteType } from '../../services/favorites';
 import { FavoriteCard } from '../../components/favorites/FavoriteCard';
+
+// ✅ NEW: Import React Query hooks
+import { 
+  useFavorites, 
+  useRemoveFavorite, 
+  useRemoveProviderFavorite 
+} from '../../hooks/useFavorites';
+import { usePrefetchService } from '../../hooks/useServices';
+import { usePrefetchProvider } from '../../hooks/useProviders';
 
 type FilterOption = 'all' | 'service' | 'provider';
 
@@ -27,50 +35,45 @@ export const FavoritesScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { isAuthenticated } = useAuth();
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [items, setItems] = useState<any[]>([]);
   const [filter, setFilter] = useState<FilterOption>('all');
 
-  const load = useCallback(async () => {
-    if (!isAuthenticated) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
+  // ✅ NEW: React Query hooks - replaces all manual state management!
+  const { 
+    data: allFavorites = [], 
+    isLoading: loading,
+    refetch 
+  } = useFavorites(undefined, isAuthenticated);
 
-    try {
-      const typeFilter = filter === 'all' ? undefined : filter as FavoriteType;
-      const data = await getMyFavorites(typeFilter);
-      setItems(data);
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to load favorites');
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, filter]);
+  const removeFavoriteMutation = useRemoveFavorite();
+  const removeProviderFavoriteMutation = useRemoveProviderFavorite();
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      load();
-    }, [load])
-  );
+  // ✅ NEW: Prefetch functions
+  const prefetchService = usePrefetchService();
+  const prefetchProvider = usePrefetchProvider();
 
-  const onRefresh = useCallback(async () => {
+  // ✅ SIMPLIFIED: Filter items in memory (already cached)
+  const items = useMemo(() => {
+    if (filter === 'all') return allFavorites;
+    return allFavorites.filter(item => item.favorite_type === filter);
+  }, [allFavorites, filter]);
+
+  // ✅ SIMPLIFIED: Pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await refetch();
     setRefreshing(false);
-  }, [load]);
+  };
 
+  // ✅ IMPROVED: Optimistic removal (instant UI update)
   const onRemove = async (item: any) => {
     try {
       if (item.favorite_type === 'service') {
-        await removeFavorite(item.id);
+        await removeFavoriteMutation.mutateAsync(item.id);
       } else {
-        await removeProviderFavorite(item.provider_favorite_id);
+        await removeProviderFavoriteMutation.mutateAsync(item.provider_favorite_id);
       }
-      setItems((prev) => prev.filter((x) => x.favorite_id !== item.favorite_id));
+      // No need to manually update state - React Query handles it!
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to remove favorite');
     }
@@ -78,8 +81,12 @@ export const FavoritesScreen: React.FC = () => {
 
   const onPressItem = (item: any) => {
     if (item.favorite_type === 'service') {
+      // ✅ NEW: Prefetch before navigation
+      prefetchService(item.id);
       navigation.navigate('ServiceDetails', { serviceId: item.id });
     } else {
+      // ✅ NEW: Prefetch before navigation
+      prefetchProvider(item.provider_favorite_id);
       navigation.navigate('ProviderDetails', { providerId: item.provider_favorite_id });
     }
   };
@@ -157,7 +164,7 @@ export const FavoritesScreen: React.FC = () => {
     );
   };
 
-  if (loading) {
+  if (loading && allFavorites.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -188,7 +195,7 @@ export const FavoritesScreen: React.FC = () => {
           { key: 'provider', label: 'Shops', icon: 'storefront' },
         ].map((tab) => {
           const active = filter === tab.key;
-          const count = items.filter(item => {
+          const count = allFavorites.filter(item => {
             if (tab.key === 'all') return true;
             return item.favorite_type === tab.key;
           }).length;
@@ -284,6 +291,7 @@ export const FavoritesScreen: React.FC = () => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

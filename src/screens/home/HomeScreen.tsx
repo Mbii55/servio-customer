@@ -1,5 +1,5 @@
 // src/screens/home/HomeScreen.tsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -20,11 +20,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { AuthModal } from '../../components/auth/AuthModal';
 import { COLORS, SIZES } from '../../constants/colors';
-import { listServices } from '../../services/services';
-import api from '../../services/api';
 import { Service } from '../../types';
-import { getHomeCategoryPills, HomeCategoryPill, ALL_CATEGORY_ID } from '../../services/categories';
-import { listMyNotifications, NotificationItem } from '../../services/notifications';
+import { HomeCategoryPill } from '../../services/categories';
+
+// ✅ NEW: Import React Query hooks
+import { useServices, usePrefetchService } from '../../hooks/useServices';
+import { useHomeCategoryPills } from '../../hooks/useCategories';
+import { useProviders, usePrefetchProvider } from '../../hooks/useProviders';
+import { useUnreadNotificationsCount } from '../../hooks/useNotifications';
 
 const { width } = Dimensions.get('window');
 
@@ -33,19 +36,45 @@ export const HomeScreen: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const [pills, setPills] = useState<HomeCategoryPill[]>([]);
-  const [pillsLoading, setPillsLoading] = useState(true);
+  // ✅ NEW: React Query hooks - replaces all manual state management!
+  const { 
+    data: pills = [], 
+    isLoading: pillsLoading 
+  } = useHomeCategoryPills(6);
 
-  const [services, setServices] = useState<Service[]>([]);
-  const [servicesLoading, setServicesLoading] = useState(true);
-  const [servicesError, setServicesError] = useState<string | null>(null);
+  const { 
+    data: services = [], 
+    isLoading: servicesLoading, 
+    error: servicesError,
+    refetch: refetchServices 
+  } = useServices({ limit: 6, offset: 0 });
 
-  const [providers, setProviders] = useState<any[]>([]);
-  const [providersLoading, setProvidersLoading] = useState(false);
+  const { 
+    data: providers = [], 
+    isLoading: providersLoading,
+    refetch: refetchProviders 
+  } = useProviders(6);
 
+  const { 
+    data: unreadNotificationsCount = 0,
+    refetch: refetchNotifications 
+  } = useUnreadNotificationsCount(isAuthenticated);
+
+  // ✅ NEW: Prefetch functions for instant navigation
+  const prefetchService = usePrefetchService();
+  const prefetchProvider = usePrefetchProvider();
+
+  // ✅ SIMPLIFIED: Pull-to-refresh now just calls refetch()
   const [refreshing, setRefreshing] = useState(false);
-
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchServices(),
+      refetchProviders(),
+      refetchNotifications(),
+    ]);
+    setRefreshing(false);
+  };
 
   const goToExplore = () => {
     navigation.navigate('Search');
@@ -71,86 +100,16 @@ export const HomeScreen: React.FC = () => {
   };
 
   const onServicePress = (serviceId: string) => {
+    // ✅ NEW: Prefetch before navigation for instant load
+    prefetchService(serviceId);
     navigation.navigate('ServiceDetails', { serviceId });
   };
 
   const onProviderPress = (providerId: string) => {
+    // ✅ NEW: Prefetch before navigation for instant load
+    prefetchProvider(providerId);
     navigation.navigate('ProviderDetails', { providerId });
   };
-
-  const loadPills = useCallback(async () => {
-    setPillsLoading(true);
-    try {
-      const data = await getHomeCategoryPills(6);
-      setPills(data);
-    } catch {
-      setPills([
-        { kind: 'all', id: ALL_CATEGORY_ID, name: 'All', icon: null },
-        { kind: 'more', id: 'more', name: 'More', icon: null },
-      ]);
-    } finally {
-      setPillsLoading(false);
-    }
-  }, []);
-
-  const loadServices = useCallback(async () => {
-    setServicesLoading(true);
-    setServicesError(null);
-    try {
-      const data = await listServices({ limit: 6, offset: 0 });
-      setServices(data);
-    } catch (e: any) {
-      setServicesError(e?.response?.data?.error || e?.message || 'Failed to load services');
-      setServices([]);
-    } finally {
-      setServicesLoading(false);
-    }
-  }, []);
-
-  const loadProviders = useCallback(async () => {
-    setProvidersLoading(true);
-    try {
-      const res = await api.get('/search?limit=6');
-      const data = res.data;
-      setProviders(data.providers?.items || []);
-    } catch (error) {
-      console.error('Load providers error:', error);
-      setProviders([]);
-    } finally {
-      setProvidersLoading(false);
-    }
-  }, []);
-
-  const loadUnreadNotifications = useCallback(async () => {
-  if (!isAuthenticated) {
-    setUnreadNotificationsCount(0);
-    return;
-  }
-
-  try {
-    const data = await listMyNotifications({ limit: 50, offset: 0 });
-    const notifications = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
-    const unreadCount = notifications.filter((n: NotificationItem) => !n.is_read).length;
-    setUnreadNotificationsCount(unreadCount);
-  } catch (error) {
-    console.error('Failed to load notifications count:', error);
-    setUnreadNotificationsCount(0);
-  }
-}, [isAuthenticated]);
-
-const loadAll = useCallback(async () => {
-  await Promise.all([loadPills(), loadServices(), loadProviders(), loadUnreadNotifications()]);
-}, [loadPills, loadServices, loadProviders, loadUnreadNotifications]);
-
-  useEffect(() => {
-    loadAll();
-  }, [loadAll]);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadAll();
-    setRefreshing(false);
-  }, [loadAll]);
 
   const greetingText = useMemo(() => {
     const hour = new Date().getHours();
@@ -162,6 +121,11 @@ const loadAll = useCallback(async () => {
     const name = user?.first_name || '';
     return name ? `${timeGreeting}, \n${name}` : timeGreeting;
   }, [isAuthenticated, user?.first_name]);
+
+  // Convert error to string
+  const servicesErrorMessage = servicesError 
+    ? 'Failed to load services' 
+    : null;
 
   const renderPill = ({ item }: { item: HomeCategoryPill }) => {
     const iconUrl = item.kind === 'category' ? (item.icon || '').trim() : '';
@@ -198,55 +162,56 @@ const loadAll = useCallback(async () => {
   };
 
   const ShopCard = ({ item }: { item: any }) => {
-    const businessName = item.business_name || `${item.first_name} ${item.last_name}`;
-    const avatarUri = item.business_logo || item.profile_image;
+  const businessName = item.business_name || `${item.first_name} ${item.last_name}`;
+  const avatarUri = item.business_logo || item.profile_image;
 
-    return (
-      <TouchableOpacity 
-        style={styles.shopCard} 
-        onPress={() => onProviderPress(item.id)} 
-        activeOpacity={0.8}
-      >
-        <View style={styles.shopImageContainer}>
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.shopAvatar} />
-          ) : (
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.secondary]}
-              style={styles.shopAvatarPlaceholder}
-            >
-              <Text style={styles.shopAvatarText}>{businessName.charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
-          )}
-          {item.service_count > 0 && (
-            <View style={styles.shopBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-            </View>
-          )}
-        </View>
+  return (
+    <TouchableOpacity 
+      style={styles.shopCard} 
+      onPress={() => onProviderPress(item.id)} 
+      activeOpacity={0.8}
+    >
+      <View style={styles.shopImageContainer}>
+        {avatarUri ? (
+          <Image source={{ uri: avatarUri }} style={styles.shopAvatar} />
+        ) : (
+          <LinearGradient
+            colors={[COLORS.primary, COLORS.secondary]}
+            style={styles.shopAvatarPlaceholder}
+          >
+            <Text style={styles.shopAvatarText}>{businessName.charAt(0).toUpperCase()}</Text>
+          </LinearGradient>
+        )}
+        {/* ✅ REMOVED: The check mark badge */}
+        {/* {item.service_count > 0 && (
+          <View style={styles.shopBadge}>
+            <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+          </View>
+        )} */}
+      </View>
 
-        <View style={styles.shopInfo}>
-          <Text style={styles.shopName} numberOfLines={1}>
-            {businessName}
-          </Text>
-          {item.country && (
-            <View style={styles.shopMeta}>
-              <Ionicons name="location" size={12} color={COLORS.text.secondary} />
-              <Text style={styles.shopMetaText} numberOfLines={1}>
-                {item.country}
-              </Text>
-            </View>
-          )}
-          <View style={styles.shopServices}>
-            <View style={styles.servicesBadge}>
-              <Ionicons name="briefcase" size={10} color={COLORS.primary} />
-              <Text style={styles.servicesBadgeText}>{item.service_count} services</Text>
-            </View>
+      <View style={styles.shopInfo}>
+        <Text style={styles.shopName} numberOfLines={1}>
+          {businessName}
+        </Text>
+        {item.country && (
+          <View style={styles.shopMeta}>
+            <Ionicons name="location" size={12} color={COLORS.text.secondary} />
+            <Text style={styles.shopMetaText} numberOfLines={1}>
+              {item.country}
+            </Text>
+          </View>
+        )}
+        <View style={styles.shopServices}>
+          <View style={styles.servicesBadge}>
+            <Ionicons name="briefcase" size={10} color={COLORS.primary} />
+            <Text style={styles.servicesBadgeText}>{item.service_count} services</Text>
           </View>
         </View>
-      </TouchableOpacity>
-    );
-  };
+      </View>
+    </TouchableOpacity>
+  );
+};
 
   const ServiceCard = ({ item }: { item: any }) => {
     const imageUrl = Array.isArray(item.images) ? item.images?.[0] : item.images?.[0];
@@ -372,6 +337,7 @@ const loadAll = useCallback(async () => {
             </View>
           </LinearGradient>
         </View>
+
         {/* Hero Banner */}
         <View style={styles.heroContainer}>
           <LinearGradient
@@ -406,13 +372,13 @@ const loadAll = useCallback(async () => {
 
               <View style={styles.heroIllustration}>
                 <View style={styles.floatingIcon1}>
-                  <Ionicons name="hammer" size={24} color={COLORS.primary} />
+                  <Ionicons name="leaf" size={24} color={COLORS.primary} />
                 </View>
                 <View style={styles.floatingIcon2}>
-                  <Ionicons name="build" size={20} color={COLORS.primary} />
+                  <Ionicons name="sparkles" size={20} color={COLORS.primary} />
                 </View>
                 <View style={styles.floatingIcon3}>
-                  <Ionicons name="construct" size={18} color={COLORS.primary} />
+                  <Ionicons name="water" size={18} color={COLORS.primary} />
                 </View>
               </View>
             </View>
@@ -488,10 +454,10 @@ const loadAll = useCallback(async () => {
             <View style={styles.loadingContainer}>
               <ActivityIndicator color={COLORS.primary} size="large" />
             </View>
-          ) : servicesError ? (
+          ) : servicesErrorMessage ? (
             <View style={styles.errorContainer}>
               <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
-              <Text style={styles.errorText}>{servicesError}</Text>
+              <Text style={styles.errorText}>{servicesErrorMessage}</Text>
             </View>
           ) : services.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -514,7 +480,7 @@ const loadAll = useCallback(async () => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.sectionTitle}>How Servio Works</Text>
+              <Text style={styles.sectionTitle}>How Call To Clean Works</Text>
               <Text style={styles.sectionSubtitle}>Simple steps to get started</Text>
             </View>
           </View>

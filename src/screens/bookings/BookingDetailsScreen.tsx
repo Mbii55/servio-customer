@@ -1,5 +1,6 @@
 // src/screens/bookings/BookingDetailsScreen.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback  } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -18,8 +19,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SIZES } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
 import { AuthModal } from '../../components/auth/AuthModal';
-import { cancelBooking, getBookingById, BookingStatus } from '../../services/bookings';
+import { BookingStatus } from '../../services/bookings';
 import api from '../../services/api';
+
+// ✅ NEW: Import React Query hooks
+import { useBooking, useCancelBooking, useCanReviewBooking } from '../../hooks/useBookings';
 
 type Params = { bookingId: string };
 
@@ -79,72 +83,42 @@ export const BookingDetailsScreen: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [booking, setBooking] = useState<any | null>(null);
+  // ✅ NEW: React Query hooks - replaces manual state management!
+  const {
+    data: booking,
+    isLoading: loading,
+    error: queryError,
+    refetch
+  } = useBooking(bookingId, isAuthenticated);
 
-  // Review eligibility state
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [canReview, setCanReview] = useState(false);
+  const cancelBookingMutation = useCancelBooking();
 
-  const load = async () => {
-    setErr(null);
-    setLoading(true);
-    try {
-      const data = await getBookingById(bookingId);
-      setBooking(data);
-    } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || 'Failed to load booking');
-      setBooking(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ✅ NEW: Check review eligibility with React Query
+  const {
+    data: reviewEligibility,
+    isLoading: reviewLoading
+  } = useCanReviewBooking(
+    bookingId,
+    isAuthenticated && !!booking && booking.status === 'completed'
+  );
 
-  const checkCanReview = async () => {
-    if (!bookingId) return;
-    try {
-      setReviewLoading(true);
-      const res = await api.get(`/reviews/can-review/${bookingId}`);
-      setCanReview(!!res.data?.canReview);
-    } catch {
-      setCanReview(false); // safest default
-    } finally {
-      setReviewLoading(false);
-    }
-  };
+  const canReview = reviewEligibility?.canReview ?? false;
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setShowAuthModal(true);
-      setLoading(false);
-      return;
-    }
-    load();
-  }, [isAuthenticated, bookingId]);
-
-  // Check review eligibility when booking is loaded and completed
-  useEffect(() => {
-    const status: BookingStatus = (booking?.status as BookingStatus) || 'pending';
-    if (isAuthenticated && booking && status === 'completed') {
-      checkCanReview();
-    } else {
-      setCanReview(false);
-    }
-  }, [isAuthenticated, booking?.id, booking?.status]);
+  const err = queryError ? 'Failed to load booking' : null;
 
   const status: BookingStatus = (booking?.status as BookingStatus) || 'pending';
   const config = statusConfig(status);
 
   const serviceTitle = booking?.service_title || booking?.service?.title || 'Service';
   const providerName =
-    booking?.provider_business_name || booking?.provider?.business_name || 'Provider';
-  const providerLogo = booking?.provider_business_logo || booking?.provider?.business_logo || null;
+    booking?.provider_business_name || booking?.provider?.business_profile?.business_name || 'Provider';
+  const providerLogo = booking?.provider_business_logo || booking?.provider?.business_profile?.business_logo || null;
 
   const canCancel =
     (user?.role === 'customer' || user?.role === 'admin') &&
     (status === 'pending' || status === 'accepted');
 
+  // ✅ IMPROVED: Optimistic cancel with automatic UI update
   const onCancel = () => {
     Alert.alert('Cancel Booking', 'Are you sure you want to cancel this booking?', [
       { text: 'No', style: 'cancel' },
@@ -153,16 +127,16 @@ export const BookingDetailsScreen: React.FC = () => {
         style: 'destructive',
         onPress: async () => {
           try {
-            setLoading(true);
-            const updated = await cancelBooking(bookingId, 'Cancelled by customer');
-            setBooking(updated);
+            await cancelBookingMutation.mutateAsync({
+              bookingId,
+              reason: 'Cancelled by customer'
+            });
+            // React Query automatically updates the UI!
           } catch (e: any) {
             Alert.alert(
               'Error',
               e?.response?.data?.message || e?.message || 'Failed to cancel booking'
             );
-          } finally {
-            setLoading(false);
           }
         },
       },
@@ -170,6 +144,7 @@ export const BookingDetailsScreen: React.FC = () => {
   };
 
   const onGoToReview = () => {
+    if (!booking) return;
     navigation.navigate('Review', {
       bookingId: booking.id,
       bookingNumber: booking.booking_number || booking.id,
@@ -223,7 +198,7 @@ export const BookingDetailsScreen: React.FC = () => {
             <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
           </LinearGradient>
           <Text style={styles.errorTitle}>{err ?? 'Booking not found'}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={load}>
+          <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
             <LinearGradient
               colors={[COLORS.primary, COLORS.secondary] as const}
               start={{ x: 0, y: 0 }}
@@ -460,10 +435,20 @@ export const BookingDetailsScreen: React.FC = () => {
           )}
 
           {canCancel && (
-            <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={onCancel}
+              disabled={cancelBookingMutation.isPending}
+            >
               <View style={styles.cancelButtonContent}>
-                <Ionicons name="close-circle-outline" size={20} color={COLORS.danger} />
-                <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                {cancelBookingMutation.isPending ? (
+                  <ActivityIndicator size="small" color={COLORS.danger} />
+                ) : (
+                  <Ionicons name="close-circle-outline" size={20} color={COLORS.danger} />
+                )}
+                <Text style={styles.cancelButtonText}>
+                  {cancelBookingMutation.isPending ? 'Cancelling...' : 'Cancel Booking'}
+                </Text>
               </View>
             </TouchableOpacity>
           )}

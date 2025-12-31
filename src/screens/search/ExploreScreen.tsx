@@ -1,5 +1,5 @@
 // src/screens/search/ExploreScreen.tsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -18,11 +18,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import api from '../../services/api';
 import { COLORS, SIZES } from '../../constants/colors';
 import { ServiceCard } from '../../components/services/ServiceCard';
-import { listMyNotifications, NotificationItem } from '../../services/notifications';
 import { useAuth } from '../../context/AuthContext';
+
+// ✅ NEW: Import React Query hooks
+import { useSearch, useCategories, useFeaturedResults, SearchMode } from '../../hooks/useSearch';
+import { useUnreadNotificationsCount } from '../../hooks/useNotifications';
+import { usePrefetchService } from '../../hooks/useServices';
+import { usePrefetchProvider } from '../../hooks/useProviders';
 
 const { width } = Dimensions.get('window');
 
@@ -32,10 +36,6 @@ type Category = {
   slug?: string;
   icon?: string | null;
 };
-
-type Service = any;
-type Provider = any;
-type SearchMode = 'services' | 'shops';
 
 type ExploreScreenParams = {
   initialCategory?: string;
@@ -49,126 +49,65 @@ const looksLikeUrl = (x?: string | null) => !!x && /^https?:\/\//i.test(x.trim()
 export const ExploreScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<ExploreScreenRouteProp>();
-
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searching, setSearching] = useState(false);
+  const { isAuthenticated } = useAuth();
 
   const initialCategory = route.params?.initialCategory;
   const initialMode = route.params?.searchMode || 'services';
 
   const [searchMode, setSearchMode] = useState<SearchMode>(initialMode);
   const [query, setQuery] = useState('');
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory || null);
-
-  const [hasMoreServices, setHasMoreServices] = useState(false);
-  const [hasMoreProviders, setHasMoreProviders] = useState(false);
-  const [totalServices, setTotalServices] = useState(0);
-  const [totalProviders, setTotalProviders] = useState(0);
   const [offset, setOffset] = useState(0);
-  const { isAuthenticated } = useAuth();
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
-  const loadUnreadNotifications = useCallback(async () => {
-    if (!isAuthenticated) {
-      setUnreadNotificationsCount(0);
-      return;
-    }
+  // ✅ NEW: Debounced query state for API calls
+  const [debouncedQuery, setDebouncedQuery] = useState('');
 
-    try {
-      const data = await listMyNotifications({ limit: 50, offset: 0 });
-      const notifications = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
-      const unreadCount = notifications.filter((n: NotificationItem) => !n.is_read).length;
-      setUnreadNotificationsCount(unreadCount);
-    } catch (error) {
-      console.error('Failed to load notifications count:', error);
-      setUnreadNotificationsCount(0);
-    }
-  }, [isAuthenticated]);
+  // ✅ NEW: React Query hooks
+  const { data: categories = [], isLoading: categoriesLoading } = useCategories();
+  
+  const { 
+    data: unreadNotificationsCount = 0 
+  } = useUnreadNotificationsCount(isAuthenticated);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const catRes = await api.get('/categories');
-      const cats = (catRes.data?.data ?? catRes.data ?? []) as Category[];
-      setCategories(Array.isArray(cats) ? cats.filter((c) => c?.id && c?.name) : []);
+  // Main search/browse query
+  const { 
+    data: searchResults, 
+    isLoading: searching,
+    refetch: refetchResults,
+    isFetching
+  } = useSearch({
+    query: debouncedQuery,
+    categoryId: selectedCategory || undefined,
+    mode: searchMode,
+    limit: 20,
+    offset,
+  });
 
-      await Promise.all([
-        loadResults(true),
-        loadUnreadNotifications() // Add this line
-      ]);
-    } catch (error) {
-      console.error('Load error:', error);
-      setCategories([]);
-      setServices([]);
-      setProviders([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [loadUnreadNotifications]);
+  // Featured results for non-search view
+  const { 
+    data: featuredResults 
+  } = useFeaturedResults(searchMode);
 
-  const loadResults = useCallback(async (reset = false) => {
-    try {
-      setSearching(true);
-      const currentOffset = reset ? 0 : offset;
+  // ✅ NEW: Prefetch functions
+  const prefetchService = usePrefetchService();
+  const prefetchProvider = usePrefetchProvider();
 
-      const params = new URLSearchParams();
-      if (query.trim()) params.append('query', query.trim());
-      if (selectedCategory && searchMode === 'services') {
-        params.append('categoryId', selectedCategory);
-      }
-      params.append('limit', '20');
-      params.append('offset', currentOffset.toString());
-
-      const res = await api.get(`/search?${params.toString()}`);
-      const data = res.data;
-
-      const newServices = data.services?.items || [];
-      const newProviders = data.providers?.items || [];
-
-      if (reset) {
-        setServices(newServices);
-        setProviders(newProviders);
-        setOffset(20);
-      } else {
-        if (searchMode === 'services') {
-          setServices(prev => [...prev, ...newServices]);
-        } else {
-          setProviders(prev => [...prev, ...newProviders]);
-        }
-        setOffset(currentOffset + 20);
-      }
-
-      setTotalServices(data.services?.total || 0);
-      setTotalProviders(data.providers?.total || 0);
-      setHasMoreServices(currentOffset + newServices.length < (data.services?.total || 0));
-      setHasMoreProviders(currentOffset + newProviders.length < (data.providers?.total || 0));
-    } catch (error) {
-      console.error('Load results error:', error);
-      if (reset) {
-        setServices([]);
-        setProviders([]);
-        setTotalServices(0);
-        setTotalProviders(0);
-        setHasMoreServices(false);
-        setHasMoreProviders(false);
-      }
-    } finally {
-      setSearching(false);
-    }
-  }, [query, selectedCategory, offset, searchMode]);
-
+  // ✅ NEW: Debounce search query (300ms delay)
   useEffect(() => {
     const timer = setTimeout(() => {
-      loadResults(true);
+      setDebouncedQuery(query);
+      setOffset(0); // Reset pagination on new search
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, selectedCategory, searchMode]);
+  }, [query]);
 
+  // Reset offset when filters change
+  useEffect(() => {
+    setOffset(0);
+  }, [selectedCategory, searchMode]);
+
+  // Handle route params
   useEffect(() => {
     if (route.params?.initialCategory) {
       setSelectedCategory(route.params.initialCategory);
@@ -179,27 +118,46 @@ export const ExploreScreen: React.FC = () => {
     }
   }, [route.params]);
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const onRefresh = useCallback(async () => {
+  // ✅ SIMPLIFIED: Pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
     setRefreshing(true);
     setQuery('');
     setSelectedCategory(null);
-    await load();
-    await loadUnreadNotifications(); // Add this line
+    setOffset(0);
+    await refetchResults();
     setRefreshing(false);
-  }, [load, loadUnreadNotifications]);
+  };
 
-  const popularServices = useMemo(() => services.slice(0, 10), [services]);
-  const featuredProviders = useMemo(() => providers.slice(0, 10), [providers]);
+  const isSearching = !!(debouncedQuery || selectedCategory);
+  
+  // Extract current data based on mode
+  const services = searchResults?.services.items || [];
+  const providers = searchResults?.providers.items || [];
+  const totalServices = searchResults?.services.total || 0;
+  const totalProviders = searchResults?.providers.total || 0;
+
+  const currentData = searchMode === 'services' ? services : providers;
+  const currentTotal = searchMode === 'services' ? totalServices : totalProviders;
+  const hasMore = currentData.length < currentTotal;
+
+  // Featured data for non-search view
+  const popularServices = useMemo(() => 
+    (featuredResults?.services.items || []).slice(0, 10), 
+    [featuredResults]
+  );
+  const featuredProviders = useMemo(() => 
+    (featuredResults?.providers.items || []).slice(0, 10), 
+    [featuredResults]
+  );
 
   const openService = (serviceId: string) => {
+    prefetchService(serviceId);
     navigation.navigate('ServiceDetails', { serviceId });
   };
 
   const openProvider = (providerId: string) => {
+    prefetchProvider(providerId);
     navigation.navigate('ProviderDetails', { providerId });
   };
 
@@ -214,9 +172,8 @@ export const ExploreScreen: React.FC = () => {
   };
 
   const loadMore = () => {
-    const hasMore = searchMode === 'services' ? hasMoreServices : hasMoreProviders;
-    if (!searching && hasMore) {
-      loadResults(false);
+    if (!isFetching && hasMore) {
+      setOffset(prev => prev + 20);
     }
   };
 
@@ -224,9 +181,11 @@ export const ExploreScreen: React.FC = () => {
     setSearchMode(mode);
     setQuery('');
     setSelectedCategory(null);
+    setOffset(0);
   };
 
-  if (loading) {
+  // Initial loading state (only for categories)
+  if (categoriesLoading && categories.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -236,11 +195,6 @@ export const ExploreScreen: React.FC = () => {
       </SafeAreaView>
     );
   }
-
-  const isSearching = !!(query || selectedCategory);
-  const currentData = searchMode === 'services' ? services : providers;
-  const currentTotal = searchMode === 'services' ? totalServices : totalProviders;
-  const hasMore = searchMode === 'services' ? hasMoreServices : hasMoreProviders;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -354,8 +308,8 @@ export const ExploreScreen: React.FC = () => {
           <View style={styles.activeFilters}>
             <Ionicons name="funnel" size={14} color={COLORS.primary} />
             <Text style={styles.activeFiltersText}>
-              {query && `"${query}"`}
-              {query && selectedCategory && ' • '}
+              {debouncedQuery && `"${debouncedQuery}"`}
+              {debouncedQuery && selectedCategory && ' • '}
               {selectedCategory && categories.find(c => c.id === selectedCategory)?.name}
             </Text>
             <TouchableOpacity onPress={clearSearch} style={styles.clearFiltersBtn}>
@@ -518,14 +472,14 @@ export const ExploreScreen: React.FC = () => {
             </View>
           )}
 
-          {searching && (
+          {isFetching && currentData.length > 0 && (
             <View style={styles.loadingMore}>
               <ActivityIndicator size="small" color={COLORS.primary} />
               <Text style={styles.loadingMoreText}>Loading...</Text>
             </View>
           )}
 
-          {hasMore && !searching && currentData.length > 0 && (
+          {hasMore && !isFetching && currentData.length > 0 && (
             <TouchableOpacity style={styles.loadMoreButton} onPress={loadMore}>
               <LinearGradient
                 colors={['#F9FAFB', '#F3F4F6']}
@@ -545,6 +499,9 @@ export const ExploreScreen: React.FC = () => {
     </SafeAreaView>
   );
 };
+
+// ✅ Keep all your existing component and style code below - no changes needed!
+// CategoryChip, ShopCard, ProviderCard, and StyleSheet remain the same
 
 // Category Chip Component
 const CategoryChip: React.FC<{

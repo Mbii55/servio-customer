@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  KeyboardAvoidingView,
   TextInput,
   Alert,
   SafeAreaView,
@@ -19,13 +20,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { COLORS, SIZES } from '../../constants/colors';
 import { useBooking } from '../../context/BookingContext';
-import { getServiceById } from '../../services/services';
-import { getMyAddresses } from '../../services/addresses';
 import { createBooking } from '../../services/bookings';
 import api from '../../services/api';
-import { Service, ServiceAddon, Address } from '../../types';
+import { ServiceAddon, Address } from '../../types';
 import { CalendarPicker } from '../../components/booking/CalendarPicker';
 import { TimeSlotPicker } from '../../components/booking/TimeSlotPicker';
+
+// ✅ NEW: Import React Query hooks for data fetching only
+import { useService } from '../../hooks/useServices';
+import { useAddresses } from '../../hooks/useAddresses';
+import { useQuery } from '@tanstack/react-query';
 
 type Params = { serviceId: string };
 type NavProp = NativeStackNavigationProp<any>;
@@ -41,13 +45,39 @@ export const BookServiceScreen: React.FC = () => {
 
   const { bookingData, updateBookingData, resetBookingData } = useBooking();
 
-  const [currentStep, setCurrentStep] = useState<BookingStep>('datetime');
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  // ✅ UPDATED: Use React Query for service data (instant if cached from ServiceDetailsScreen)
+  const { 
+    data: service, 
+    isLoading: serviceLoading 
+  } = useService(serviceId);
 
-  const [service, setService] = useState<Service | null>(null);
-  const [addons, setAddons] = useState<ServiceAddon[]>([]);
-  const [addresses, setAddresses] = useState<Address[]>([]);
+  // ✅ UPDATED: Use React Query for addresses (instant if cached from AddressesListScreen)
+  const { 
+    data: addresses = [], 
+    refetch: refetchAddresses 
+  } = useAddresses();
+
+  // ✅ UPDATED: Use React Query for addons (cached per service)
+  const { 
+    data: addons = [] 
+  } = useQuery({
+    queryKey: ['addons', 'service', serviceId],
+    queryFn: async () => {
+      try {
+        const response = await api.get(`/addons/service/${serviceId}`);
+        return ((response.data || []) as ServiceAddon[]).filter((a) => a.is_active);
+      } catch (error) {
+        console.error('Failed to load addons:', error);
+        return [];
+      }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: !!serviceId,
+  });
+
+  // ✅ KEEP: All form state remains manual (ephemeral booking flow state)
+  const [currentStep, setCurrentStep] = useState<BookingStep>('datetime');
+  const [submitting, setSubmitting] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeStr, setSelectedTimeStr] = useState<string | null>(null);
@@ -61,69 +91,33 @@ export const BookServiceScreen: React.FC = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // ✅ SIMPLIFIED: Initialize booking data and default address
   useEffect(() => {
-    loadData();
+    if (service) {
+      updateBookingData({ serviceId });
+    }
+
+    // Set default address
+    const defaultAddr = addresses.find((a) => a.is_default);
+    if (defaultAddr && !selectedAddressId) {
+      setSelectedAddressId(defaultAddr.id);
+    }
+
     return () => {
       resetBookingData();
     };
-  }, [serviceId]);
+  }, [serviceId, service, addresses]);
 
-  // Refresh addresses when screen comes back into focus (e.g., after adding new address)
+  // ✅ KEEP: Refresh addresses when returning to address step
   useFocusEffect(
     useCallback(() => {
       if (currentStep === 'address') {
-        loadAddresses();
+        refetchAddresses();
       }
     }, [currentStep])
   );
 
-  const loadAddresses = async (): Promise<Address[]> => {
-    try {
-      const addressesData = await getMyAddresses();
-      setAddresses(addressesData);
-      return addressesData;
-    } catch (error) {
-      console.error('Failed to load addresses:', error);
-      setAddresses([]);
-      return [];
-    }
-  };
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [serviceData, addonsData, addressesData] = await Promise.all([
-        getServiceById(serviceId),
-        loadAddons(serviceId),
-        loadAddresses(),
-      ]);
-
-      setService(serviceData);
-      setAddons(addonsData);
-
-      const defaultAddr = addressesData.find((a) => a.is_default);
-      if (defaultAddr) {
-        setSelectedAddressId(defaultAddr.id);
-      }
-
-      updateBookingData({ serviceId });
-    } catch (error: any) {
-      Alert.alert('Error', 'Failed to load booking information');
-      navigation.goBack();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAddons = async (serviceId: string): Promise<ServiceAddon[]> => {
-    try {
-      const response = await api.get(`/addons/service/${serviceId}`);
-      return (response.data || []).filter((a: ServiceAddon) => a.is_active);
-    } catch (error) {
-      return [];
-    }
-  };
-
+  // ✅ KEEP: Time slots need fresh data (not cached)
   const loadSlotsForSelectedDate = async (date: Date) => {
     if (!service) return;
 
@@ -313,25 +307,25 @@ export const BookServiceScreen: React.FC = () => {
   };
 
   const handleAddAddressPress = async () => {
-    // Navigate to AddAddress screen
     navigation.navigate('AddAddress', {
       onAddressAdded: async () => {
-        // This callback will be triggered when address is successfully added
-        const updatedAddresses = await loadAddresses();
+        // Refetch addresses after adding new one
+        const { data: updatedAddresses } = await refetchAddresses();
         
-        // Auto-select the newly added address if it's the only one or if it's set as default
-        if (updatedAddresses.length > 0) {
+        if (updatedAddresses && updatedAddresses.length > 0) {
           const newDefault = updatedAddresses.find(a => a.is_default);
           if (newDefault) {
             setSelectedAddressId(newDefault.id);
           } else if (updatedAddresses.length === 1) {
-            // If only one address exists, select it
             setSelectedAddressId(updatedAddresses[0].id);
           }
         }
       }
     });
   };
+
+  // ✅ SIMPLIFIED: Loading state only checks service (addresses/addons load in background)
+  const loading = serviceLoading && !service;
 
   if (loading) {
     return (

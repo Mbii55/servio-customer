@@ -58,7 +58,7 @@ export const ProfileScreen: React.FC = () => {
             <Ionicons name="person-outline" size={48} color={COLORS.primary} />
           </LinearGradient>
 
-          <Text style={styles.guestTitle}>Welcome to Servio</Text>
+          <Text style={styles.guestTitle}>Welcome to Call To Clean</Text>
           <Text style={styles.guestSubtitle}>
             Sign in to book services, save favorites, and manage your bookings
           </Text>

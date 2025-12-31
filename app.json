@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "servio-customer",
-    "slug": "servio-customer",
+    "name": "Call To Clean",
+    "slug": "call-to-clean-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.servio.customer",
+      "bundleIdentifier": "com.calltoclean.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We use your location to attach GPS coordinates to your address so service providers can find you.",
         "NSUserTrackingUsageDescription": "We use notifications to update you about your bookings.",
@@ -22,7 +22,7 @@
       }
     },
     "android": {
-      "package": "com.servio.customer",
+      "package": "com.calltoclean.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -50,11 +50,6 @@
           ]
         }
       ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "1a907759-59ee-4936-ba23-e3a2d9265b87"
-      }
-    }
+    ]
   }
 }

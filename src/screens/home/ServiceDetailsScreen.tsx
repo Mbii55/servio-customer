@@ -21,13 +21,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS, SIZES } from '../../constants/colors';
-import { getServiceById } from '../../services/services';
-import { Service, ServiceAddon } from '../../types';
+import { ServiceAddon } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { AuthModal } from '../../components/auth/AuthModal';
 import api from '../../services/api';
 import { HomeStackParamList } from '../../navigation/types';
-import { getFavoriteStatus, toggleFavorite } from '../../services/favorites';
+
+// ✅ NEW: Import React Query hooks
+import { useService } from '../../hooks/useServices';
+import { useToggleFavorite } from '../../hooks/useFavorites';
+import { useQuery } from '@tanstack/react-query';
 
 type Params = { serviceId: string };
 type NavProp = NativeStackNavigationProp<HomeStackParamList>;
@@ -71,97 +74,90 @@ export const ServiceDetailsScreen: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const [service, setService] = useState<Service | null>(null);
-  const [addons, setAddons] = useState<ServiceAddon[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [isFavorite, setIsFavorite] = useState(false);
+  // ✅ NEW: React Query hooks - replaces manual state management!
+  const {
+    data: service,
+    isLoading: loading,
+    error: queryError,
+    refetch: refetchService
+  } = useService(serviceId);
 
+  // ✅ NEW: Load addons with React Query
+  const {
+    data: addons = []
+  } = useQuery({
+    queryKey: ['addons', 'service', serviceId],
+    queryFn: async () => {
+      try {
+        const response = await api.get(`/addons/service/${serviceId}`);
+        return (response.data || []) as ServiceAddon[];
+      } catch (error) {
+        console.error('Failed to load addons:', error);
+        return [];
+      }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // ✅ NEW: Load reviews with React Query
+  const {
+    data: reviewsData,
+    isLoading: reviewsLoading,
+    error: reviewsQueryError,
+    refetch: refetchReviews
+  } = useQuery({
+    queryKey: ['reviews', 'service', serviceId],
+    queryFn: async () => {
+      const res = await api.get(`/reviews/service/${serviceId}`);
+      return {
+        reviews: Array.isArray(res.data?.reviews) ? (res.data.reviews as ReviewItem[]) : [],
+        statistics: (res.data?.statistics as ReviewStats | undefined) ?? null,
+      };
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes (reviews can be fresher)
+  });
+
+  const reviews = reviewsData?.reviews ?? [];
+  const reviewStats = reviewsData?.statistics ?? null;
+  const reviewsErr = reviewsQueryError ? 'Failed to load reviews' : null;
+
+  // ✅ NEW: Optimistic favorite toggle
+  const toggleFavoriteMutation = useToggleFavorite();
+
+  // ✅ NEW: Get favorite status from favorites cache (if loaded)
+  const { data: favoritesData } = useQuery({
+    queryKey: ['favorites', 'status', serviceId],
+    queryFn: async () => {
+      if (!isAuthenticated) return { is_favorite: false };
+      try {
+        const res = await api.get(`/favorites/status/${serviceId}`);
+        return res.data as { is_favorite: boolean };
+      } catch {
+        return { is_favorite: false };
+      }
+    },
+    enabled: isAuthenticated,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const isFavorite = favoritesData?.is_favorite ?? false;
+
+  // Image gallery state
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedImages, setFailedImages] = useState<Record<number, boolean>>({});
   const galleryRef = useRef<ScrollView>(null);
 
-  // Reviews state
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [reviewsErr, setReviewsErr] = useState<string | null>(null);
-  const [reviews, setReviews] = useState<ReviewItem[]>([]);
-  const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
+  // Convert error to string
+  const status = (queryError as any)?.response?.status;
+  const apiMsg = (queryError as any)?.response?.data?.error;
 
-  useEffect(() => {
-    loadServiceData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceId]);
+  const err =
+    status === 404
+      ? 'This service is unavailable (it may have been deactivated).'
+      : queryError
+        ? (apiMsg || 'Failed to load service')
+        : null;
 
-  const loadAddons = async (id: string): Promise<ServiceAddon[]> => {
-    try {
-      const response = await api.get(`/addons/service/${id}`);
-      return response.data || [];
-    } catch (error) {
-      console.error('Failed to load addons:', error);
-      return [];
-    }
-  };
-
-  const loadReviews = async (id: string) => {
-    try {
-      setReviewsErr(null);
-      setReviewsLoading(true);
-
-      const res = await api.get(`/reviews/service/${id}`);
-      const r = Array.isArray(res.data?.reviews) ? (res.data.reviews as ReviewItem[]) : [];
-      const s = res.data?.statistics as ReviewStats | undefined;
-
-      setReviews(r);
-      setReviewStats(s ?? null);
-    } catch (e: any) {
-      console.error('Failed to load reviews:', e);
-      setReviews([]);
-      setReviewStats(null);
-      setReviewsErr(e?.response?.data?.error || e?.message || 'Failed to load reviews');
-    } finally {
-      setReviewsLoading(false);
-    }
-  };
-
-  const loadServiceData = async () => {
-    setErr(null);
-    setLoading(true);
-
-    try {
-      const [serviceData, addonsData] = await Promise.all([
-        getServiceById(serviceId),
-        loadAddons(serviceId),
-      ]);
-
-      setService(serviceData);
-      setAddons(addonsData);
-      setActiveIndex(0);
-      setFailedImages({});
-    } catch (e: any) {
-      setErr(e?.response?.data?.error || e?.message || 'Failed to load service');
-    } finally {
-      setLoading(false);
-    }
-
-    loadReviews(serviceId);
-  };
-
-  useEffect(() => {
-    const loadFav = async () => {
-      if (!isAuthenticated) {
-        setIsFavorite(false);
-        return;
-      }
-      try {
-        const s = await getFavoriteStatus(serviceId);
-        setIsFavorite(!!s.is_favorite);
-      } catch {
-        // ignore
-      }
-    };
-
-    loadFav();
-  }, [isAuthenticated, serviceId]);
 
   const images = useMemo(() => {
     const arr = service?.images ?? [];
@@ -179,7 +175,13 @@ export const ServiceDetailsScreen: React.FC = () => {
 
   const activeAddons = useMemo(() => addons.filter((a) => a.is_active), [addons]);
 
+  const isInactive = service?.is_active === false;
+
   const onBookPress = () => {
+    if (isInactive) {
+      Alert.alert("Service unavailable", "This service has been deactivated and can’t be booked.");
+      return;
+    }
     if (!isAuthenticated) {
       setShowAuthModal(true);
       return;
@@ -187,10 +189,11 @@ export const ServiceDetailsScreen: React.FC = () => {
     navigation.navigate('BookService', { serviceId });
   };
 
+
   const onSharePress = async () => {
     try {
       await Share.share({
-        message: `Check out ${service?.title} on Servio!\n\nPrice: QAR ${priceText}`,
+        message: `Check out ${service?.title} on Call To Clean!\n\nPrice: QAR ${priceText}`,
         title: service?.title,
       });
     } catch (error) {
@@ -198,20 +201,17 @@ export const ServiceDetailsScreen: React.FC = () => {
     }
   };
 
+  // ✅ IMPROVED: Optimistic favorite toggle (instant UI update)
   const onFavoritePress = async () => {
     if (!isAuthenticated) {
       setShowAuthModal(true);
       return;
     }
 
-    const prev = isFavorite;
-    setIsFavorite(!prev);
-
     try {
-      const r = await toggleFavorite(serviceId);
-      setIsFavorite(r.is_favorite);
+      await toggleFavoriteMutation.mutateAsync(serviceId);
+      // React Query handles optimistic update automatically!
     } catch (e: any) {
-      setIsFavorite(prev);
       Alert.alert('Error', e?.message || 'Failed to update favorite');
     }
   };
@@ -260,7 +260,7 @@ export const ServiceDetailsScreen: React.FC = () => {
     );
   };
 
-  if (loading) {
+  if (loading && !service) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -271,32 +271,58 @@ export const ServiceDetailsScreen: React.FC = () => {
     );
   }
 
-  if (err || !service) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
+ if (err || !service) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.errorContainer}>
+        <LinearGradient
+          colors={['#FEF2F2', '#FEE2E2']}
+          style={styles.errorIconContainer}
+        >
+          <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
+        </LinearGradient>
+
+        <Text style={styles.errorTitle}>{err ?? 'Service not found'}</Text>
+
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => navigation.navigate('HomeScreen')}
+          activeOpacity={0.85}
+        >
           <LinearGradient
-            colors={['#FEF2F2', '#FEE2E2']}
-            style={styles.errorIconContainer}
+            colors={[COLORS.primary, COLORS.secondary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.retryButtonGradient}
           >
-            <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
+            <Ionicons name="home-outline" size={18} color="#FFF" />
+            <Text style={styles.retryButtonText}>Go Home</Text>
           </LinearGradient>
-          <Text style={styles.errorTitle}>{err ?? 'Service not found'}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadServiceData}>
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.secondary]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.retryButtonGradient}
-            >
-              <Ionicons name="refresh" size={18} color="#FFF" />
-              <Text style={styles.retryButtonText}>Try Again</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
+        </TouchableOpacity>
+
+        {/* Optional: Back button */}
+        <TouchableOpacity
+          style={[styles.retryButton, { marginTop: 10 }]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={['#F3F4F6', '#E5E7EB']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.retryButtonGradient}
+          >
+            <Ionicons name="arrow-back" size={18} color={COLORS.text.primary} />
+            <Text style={[styles.retryButtonText, { color: COLORS.text.primary }]}>
+              Back
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 
   const provider = service.provider;
   const providerId = service.provider_id;
@@ -328,12 +354,20 @@ export const ServiceDetailsScreen: React.FC = () => {
             <TouchableOpacity style={styles.headerButton} onPress={onSharePress}>
               <Ionicons name="share-outline" size={22} color={COLORS.text.primary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={onFavoritePress}>
-              <Ionicons
-                name={isFavorite ? 'heart' : 'heart-outline'}
-                size={22}
-                color={isFavorite ? '#EF4444' : COLORS.text.primary}
-              />
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={onFavoritePress}
+              disabled={toggleFavoriteMutation.isPending}
+            >
+              {toggleFavoriteMutation.isPending ? (
+                <ActivityIndicator size="small" color={COLORS.primary} />
+              ) : (
+                <Ionicons
+                  name={isFavorite ? 'heart' : 'heart-outline'}
+                  size={22}
+                  color={isFavorite ? '#EF4444' : COLORS.text.primary}
+                />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -406,6 +440,14 @@ export const ServiceDetailsScreen: React.FC = () => {
           <View style={styles.titleCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{service.title}</Text>
+
+              {isInactive && (
+                <View style={{ padding: 12, borderRadius: 12, backgroundColor: '#FEF2F2', marginTop: 12 }}>
+                  <Text style={{ color: '#B91C1C', fontWeight: '600' }}>
+                    This service is currently unavailable.
+                  </Text>
+                </View>
+              )}
 
               {/* Rating summary */}
               <View style={styles.ratingSummaryRow}>
@@ -567,7 +609,7 @@ export const ServiceDetailsScreen: React.FC = () => {
               <View style={{ flex: 1 }} />
 
               <TouchableOpacity
-                onPress={() => loadReviews(serviceId)}
+                onPress={() => refetchReviews()}
                 activeOpacity={0.7}
                 style={styles.refreshMini}
               >
@@ -753,7 +795,7 @@ export const ServiceDetailsScreen: React.FC = () => {
         </View>
       </ScrollView>
 
-      {/* Fixed Bottom CTA - FIXED TO ALWAYS BE VISIBLE */}
+      {/* Fixed Bottom CTA */}
       <SafeAreaView style={styles.bottomSafe} edges={['bottom']}>
         <View style={styles.bottomContainer}>
           <View style={styles.bottomPriceInfo}>
@@ -761,7 +803,10 @@ export const ServiceDetailsScreen: React.FC = () => {
             <Text style={styles.bottomPrice}>QAR {priceText}</Text>
           </View>
 
-          <TouchableOpacity style={styles.bookButton} onPress={onBookPress} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.bookButton, isInactive && { opacity: 0.5 }]}
+            onPress={onBookPress}
+            activeOpacity={0.8}
+            disabled={isInactive}>
             <LinearGradient
               colors={[COLORS.primary, COLORS.secondary]}
               start={{ x: 0, y: 0 }}
