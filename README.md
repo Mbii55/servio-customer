@@ -23,6 +23,7 @@ The **Servio Customer App** allows users to:
 - Browse services by category
 - Search for services and providers
 - Book services with scheduling
+- **Pay online via Noqoody gateway** (Qatar)
 - Manage addresses for service delivery
 - Track bookings in real-time
 - Leave reviews after service completion
@@ -46,13 +47,13 @@ The **Servio Customer App** allows users to:
 | **React Query** | ^5.90 | Server state management & caching |
 | **React Navigation** | ^7.1 | Navigation library |
 | **Axios** | ^1.13 | HTTP client |
+| **React Native WebView** | Latest | Payment gateway integration |
 | **Expo Notifications** | ~0.32 | Push notifications |
 | **React Native Maps** | 1.20 | Map integration for addresses |
 
 ---
 
 ## 📁 Project Structure
-
 ```
 servio-customer-main/
 ├── assets/                      # App icons, images, splash screens
@@ -68,7 +69,11 @@ servio-customer-main/
 │   ├── hooks/                  # Custom React Query hooks
 │   ├── navigation/             # Navigation setup and types
 │   ├── screens/                # All app screens (organized by feature)
+│   │   ├── payments/           # ✅ NEW: Payment processing screens
+│   │   └── ...
 │   ├── services/               # API service functions
+│   │   ├── payments.ts         # ✅ NEW: Payment API calls
+│   │   └── ...
 │   ├── types/                  # TypeScript type definitions
 │   └── utils/                  # Utility functions (React Query config)
 ├── App.tsx                     # Root component
@@ -99,26 +104,43 @@ servio-customer-main/
 - Time slot selection
 - Address management with GPS coordinates
 - Add-on selection (optional extras)
-- Cash payment on service
+- **Payment method selection (Cash / Online)**
 
-### 4. **Favorites**
+### 4. **Payment Integration (NEW)**
+- **Payment Gateway**: Noqoody (Qatar-based)
+- **Payment Methods**: Cash on service or Pay online
+- **Payment Flow**:
+  - Customer selects payment method during booking
+  - Online payment opens Noqoody gateway in WebView
+  - Real-time payment validation
+  - Automatic booking creation after successful payment
+  - Payment failure handling with retry option
+- **Security**: HTTPS, HMAC signature verification, no card storage
+- **User Experience**: 
+  - Seamless payment within app
+  - Loading states and progress indicators
+  - Clear error messages
+  - Retry mechanism for failed payments
+
+### 5. **Favorites**
 - Save favorite services and providers
 - Quick access from favorites screen
 - Optimistic UI updates
 
-### 5. **Notifications**
+### 6. **Notifications**
 - Push notifications for booking updates
+- **Payment confirmation notifications**
 - In-app notification history
 - Unread count badge
 - Mark as read functionality
 
-### 6. **Reviews**
+### 7. **Reviews**
 - Rate services (1-5 stars)
 - Leave comments
 - Only for completed bookings
 - One review per booking
 
-### 7. **React Query Caching**
+### 8. **React Query Caching**
 - Instant screen loads with prefetching
 - Optimistic updates for mutations
 - Automatic background sync
@@ -226,6 +248,7 @@ servio-customer-main/
 - **Features**:
   - Tab filters (All / Upcoming / Completed / Cancelled)
   - Status badges with colors
+  - **Payment status badges** (Pending / Paid / Refunded)
   - Booking cards with service info
   - Pull-to-refresh
   - Review eligibility indicator for completed bookings
@@ -239,13 +262,19 @@ servio-customer-main/
   - Service details card
   - Provider information
   - Service location
-  - Payment summary
+  - **Payment summary with status**
+  - **"Pay Now" button for pending payments** (online payment only)
   - Notes section
   - Cancel button (for pending/accepted)
   - Write review button (for completed, if eligible)
   - "Reviewed" badge (if already reviewed)
-- **React Query**: Uses `useBooking`, `useCancelBooking`, `useCanReviewBooking`
+- **React Query**: Uses `useBooking`, `useCancelBooking`, `useCanReviewBooking`, `usePaymentStatus`
 - **Performance**: Instant load when coming from BookingsScreen (cached)
+- **Payment Features**:
+  - Shows payment method (Cash / Noqoody)
+  - Shows payment status badge
+  - "Pay Now" button appears for unpaid online bookings
+  - Payment status auto-refreshes
 
 #### `BookServiceScreen.tsx`
 - **Purpose**: Multi-step booking creation wizard
@@ -253,15 +282,24 @@ servio-customer-main/
   1. **Date & Time**: Calendar picker + time slot selection
   2. **Address**: Select or add service location
   3. **Add-ons**: Optional extras
-  4. **Review**: Summary + payment details
+  4. **Review**: Summary + **payment method selection**
 - **Features**:
   - Step indicator pills
   - Validation per step
   - Real-time slot availability
   - Add new address inline
+  - **Payment method selector** (Cash / Pay Online)
   - Customer notes field
+- **Payment Method Selection**:
+  - Radio buttons for Cash vs Online payment
+  - Visual indicators (icons, badges)
+  - "Secure" badge for online payment
+  - Clear payment flow information
 - **React Query**: Uses `useService`, `useAddresses` for data (form state stays manual)
 - **Performance**: Service/address load instantly from cache
+- **Payment Handling**:
+  - Cash: Creates booking immediately → Success screen
+  - Online: Navigates to PaymentProcessing screen → No booking created yet
 
 #### `BookingSuccessScreen.tsx`
 - **Purpose**: Confirmation screen after booking
@@ -269,9 +307,10 @@ servio-customer-main/
   - Success animation
   - Booking number
   - Date/Time summary
-  - Payment details
+  - **Payment details** (method and status)
   - What's next instructions
   - Actions (View Details, Back to Home)
+- **Payment Info**: Shows whether payment is pending (cash) or paid (online)
 
 #### `ReviewScreen.tsx`
 - **Purpose**: Leave a review after service completion
@@ -282,6 +321,70 @@ servio-customer-main/
   - Review eligibility check
 - **Navigation**: Modal presentation (slides up from bottom)
 - **Validation**: Only for completed bookings, one review per booking
+
+---
+
+### Payment Screens (NEW)
+**Location**: `src/screens/payments/`
+
+#### `PaymentProcessingScreen.tsx`
+- **Purpose**: Handle online payment flow with Noqoody gateway
+- **Payment States**:
+  1. **Initiating**: Generating payment link with backend
+  2. **Payment**: WebView showing Noqoody payment page
+  3. **Validating**: Confirming payment with backend (creates booking)
+  4. **Success**: Payment confirmed, booking created
+  5. **Failed**: Payment failed, no booking created
+
+- **Features**:
+  - Full-screen WebView for Noqoody payment
+  - Secure payment indicator (shield icon)
+  - Amount display at bottom
+  - Loading states with spinners
+  - Success animation
+  - Error handling with retry
+  - Cancel payment option
+  - Manual status check button
+  - Navigation handling (detect return from Noqoody)
+
+- **WebView Integration**:
+  - Opens Noqoody payment URL
+  - Monitors URL changes to detect completion
+  - Handles success/cancel/error URLs
+  - Secure HTTPS connection
+  - Loading indicators
+
+- **Payment Flow**:
+```
+  1. Screen receives booking data (not booking ID)
+  2. Call initiatePayment API → Get payment URL
+  3. Open WebView with Noqoody payment page
+  4. Customer enters card details on Noqoody
+  5. Detect return URL (success/cancel)
+  6. Call validatePayment API
+  7. Backend verifies payment → Creates booking
+  8. Navigate to BookingSuccess with new booking ID
+```
+
+- **Error Handling**:
+  - Network failures: Show retry button
+  - Payment failures: Clear message + retry
+  - Payment cancellation: Option to retry or go back
+  - WebView errors: Fallback to error state
+
+- **User Experience**:
+  - Clear progress indicators
+  - Amount visible at all times
+  - Secure payment badges
+  - Helpful error messages
+  - Easy retry mechanism
+  - No orphaned bookings if payment fails
+
+- **React Query**: Uses `useInitiatePayment`, `useValidatePayment`
+- **Navigation**: 
+  - Entry: From BookServiceScreen (online payment selected)
+  - Exit Success: To BookingSuccess screen
+  - Exit Failed: Back to BookServiceScreen or error state
 
 ---
 
@@ -376,12 +479,17 @@ servio-customer-main/
   - Unread indicator (blue dot)
   - Mark as read on tap
   - Mark all as read button
+  - **Payment confirmation notifications**
   - Time ago formatting ("5 min ago")
   - Navigation to booking details (if applicable)
   - Pull-to-refresh
   - Auto-refresh every 15s
 - **React Query**: Uses `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`
 - **Performance**: Optimistic mark as read, badge updates every 30s
+- **Notification Types**:
+  - Booking updates (created, accepted, completed, etc.)
+  - **Payment received** (successful online payment)
+  - Verification status updates
 
 ---
 
@@ -488,6 +596,7 @@ servio-customer-main/
   - `updateBookingData(data)`: Update form
   - `resetBookingData()`: Clear form
 - **Usage**: Holds ephemeral data during booking flow
+- **Note**: Does NOT store payment data (passed via navigation)
 
 ### React Query Hooks
 **Location**: `src/hooks/`
@@ -508,6 +617,18 @@ All custom hooks follow React Query patterns for:
 - `useCanReviewBooking(id)`: Check review eligibility (2min cache)
 - `useBookingsReviewEligibility(ids[])`: Batch check
 - `usePrefetchBooking()`: Prefetch before navigation
+
+#### `usePayments.ts` (NEW)
+- `usePaymentStatus(bookingId, enabled)`: Get payment info for booking (1min cache)
+- `useInitiatePayment()`: Start payment flow (no booking created yet)
+  - Input: Booking data (service, date, time, addons, etc.)
+  - Output: Payment URL, transaction reference
+  - No cache (mutation)
+- `useValidatePayment()`: Validate payment after return from Noqoody
+  - Input: Transaction reference
+  - Output: Booking ID (if payment successful)
+  - Invalidates bookings cache on success
+  - No cache (mutation)
 
 #### `useServices.ts`
 - `useServices(filters)`: List services (5min cache)
@@ -579,11 +700,80 @@ All API calls go through `api.ts` which uses Axios with:
 - Get by provider: `GET /services/provider/:id`
 
 #### `bookings.ts`
-- Create booking: `POST /bookings`
+- Create booking: `POST /bookings` (cash payment only)
 - My bookings: `GET /bookings/me`
 - Get booking: `GET /bookings/:id`
 - Update status: `PATCH /bookings/:id/status`
 - Cancel: `cancelBooking()` helper
+
+#### `payments.ts` (NEW)
+**Payment API Service**
+```typescript
+// Initiate payment (before booking creation)
+POST /api/v1/payments/initiate
+Body: {
+  service_id, scheduled_date, scheduled_time,
+  address_id?, addons?, customer_notes?
+}
+Response: {
+  success, transactionId, transactionReference,
+  paymentUrl, sessionId, uuid
+}
+
+// Validate payment (creates booking if successful)
+GET /api/v1/payments/validate/:transactionReference
+Response: {
+  success, status: 'completed' | 'pending' | 'failed',
+  message, bookingId?
+}
+
+// Get payment status for booking
+GET /api/v1/payments/booking/:bookingId/status
+Response: {
+  hasPayment, paymentMethod, paymentStatus,
+  transaction?: PaymentTransaction
+}
+```
+
+**Key Interfaces**:
+```typescript
+interface PaymentTransaction {
+  id: string;
+  booking_id?: string;  // NULL until payment completes
+  transaction_reference: string;  // PAY-2026-00000001
+  provider: 'cash' | 'noqoody';
+  amount: string;
+  currency: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  payment_url?: string;
+  created_at: string;
+}
+
+interface InitiatePaymentResponse {
+  success: boolean;
+  transactionId: string;
+  transactionReference: string;
+  paymentUrl?: string;
+  message?: string;
+}
+
+interface ValidatePaymentResponse {
+  success: boolean;
+  status: 'completed' | 'pending' | 'failed';
+  message: string;
+  bookingId?: string;  // Only present if payment successful
+}
+```
+
+**Payment Flow in App**:
+1. User completes booking form → Selects "Pay Online"
+2. Call `initiatePayment(bookingData)` → Get payment URL
+3. Navigate to PaymentProcessingScreen with payment URL
+4. User pays on Noqoody
+5. WebView detects return
+6. Call `validatePayment(transactionReference)`
+7. Backend creates booking → Returns booking ID
+8. Navigate to BookingSuccess with booking ID
 
 #### `categories.ts`
 - Get categories: `GET /categories`
@@ -601,6 +791,7 @@ All API calls go through `api.ts` which uses Axios with:
 - List: `GET /notifications`
 - Mark read: `PATCH /notifications/:id/read`
 - Mark all read: `PATCH /notifications/read-all`
+- **Types**: Includes `payment_received` for successful payments
 
 #### `addresses.ts`
 - List: `GET /addresses`
@@ -641,7 +832,6 @@ All API calls go through `api.ts` which uses Axios with:
 - iOS Simulator or Android Emulator (optional)
 
 ### Installation
-
 ```bash
 # Clone repository
 git clone <repository-url>
@@ -650,12 +840,14 @@ cd servio-customer-main
 # Install dependencies
 npm install
 
+# Install React Native WebView (for payments)
+npx expo install react-native-webview
+
 # Start development server
 npx expo start
 ```
 
 ### Running the App
-
 ```bash
 # Start Expo development server
 npm start
@@ -679,7 +871,6 @@ npx expo start
 
 ### Backend URL Configuration
 **File**: `src/constants/config.ts`
-
 ```typescript
 // Production backend (deployed)
 export const API_URL = 'https://your-backend.com/api/v1';
@@ -700,10 +891,57 @@ export const API_URL = 'https://your-backend.com/api/v1';
 - For local development, use your machine's IP address (not localhost)
 - Find your IP: `ipconfig` (Windows) or `ifconfig` (Mac/Linux)
 
+### Payment Configuration (NEW)
+
+The mobile app requires proper backend configuration for payments to work:
+
+**Backend Environment Variables** (set on your server):
+```bash
+# For Expo Go Development
+MOBILE_APP_URL=http://localhost:8081
+# Or your local IP
+MOBILE_APP_URL=http://192.168.1.100:8081
+
+# For Production (Standalone Build)
+MOBILE_APP_URL=servio://payment
+```
+
+**Deep Linking Setup** (for production builds):
+
+**File**: `app.json`
+```json
+{
+  "expo": {
+    "scheme": "servio",
+    "android": {
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "servio",
+              "host": "payment"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "ios": {
+      "associatedDomains": ["applinks:yourdomain.com"]
+    }
+  }
+}
+```
+
+**Important Payment Notes**:
+- **Expo Go**: Cannot use custom deep links (`servio://`), use `http://` URLs
+- **Development**: Use `http://localhost:8081` or `http://YOUR_IP:8081`
+- **Production**: Use custom scheme `servio://payment` (requires standalone build)
+
 ### Push Notifications Setup
 
 **File**: `app.json`
-
 ```json
 {
   "expo": {
@@ -734,6 +972,10 @@ export const API_URL = 'https://your-backend.com/api/v1';
 # No build needed - just run
 npx expo start
 # Scan QR code with Expo Go app
+
+# ⚠️ Payment Limitation: 
+# Expo Go doesn't support custom deep links
+# Payment return URL must be http:// based
 ```
 
 ### Production Build (EAS Build)
@@ -749,7 +991,32 @@ eas login
 eas build:configure
 ```
 
-#### 3. Build for Android
+#### 3. Update app.json for Production
+```json
+{
+  "expo": {
+    "scheme": "servio",  // ✅ Required for payment deep links
+    "version": "1.0.0",
+    "android": {
+      "package": "com.yourcompany.servio",
+      "versionCode": 1,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{"scheme": "servio", "host": "payment"}],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.yourcompany.servio",
+      "buildNumber": "1.0.0"
+    }
+  }
+}
+```
+
+#### 4. Build for Android
 ```bash
 # Development build
 eas build --profile development --platform android
@@ -761,7 +1028,7 @@ eas build --profile production --platform android
 eas build --profile production --platform android --auto-submit
 ```
 
-#### 4. Build for iOS
+#### 5. Build for iOS
 ```bash
 # Development build
 eas build --profile development --platform ios
@@ -775,7 +1042,6 @@ eas submit --platform ios
 
 ### EAS Configuration
 **File**: `eas.json`
-
 ```json
 {
   "build": {
@@ -800,6 +1066,7 @@ eas submit --platform ios
 - `name`: App display name
 - `slug`: URL-safe identifier
 - `version`: Semantic version (1.0.0)
+- `scheme`: Custom URL scheme for deep linking (`servio`)
 - `bundleIdentifier` (iOS): Unique identifier (com.yourcompany.app)
 - `package` (Android): Unique identifier (com.yourcompany.app)
 - `icon`: App icon (1024x1024)
@@ -809,6 +1076,7 @@ eas submit --platform ios
 - `ACCESS_FINE_LOCATION`: For address GPS coordinates
 - `ACCESS_COARSE_LOCATION`: For address GPS coordinates
 - `NOTIFICATIONS`: For push notifications
+- `INTERNET`: For API calls and payment WebView
 
 ---
 
@@ -850,6 +1118,21 @@ navigation.navigate('ServiceDetails', { serviceId });
 **How**: Update UI immediately, rollback if API fails
 **Result**: Instant perceived performance
 
+### 6. Payment-First Booking Design (NEW)
+**Why**: Prevent orphaned bookings from failed payments
+**How**: 
+- Online payment: Create payment → Pay → Create booking
+- Cash payment: Create booking immediately
+**Result**: 
+- Clean database (no failed payment bookings)
+- Better UX (no cleanup needed)
+- Simpler refund process
+
+### 7. WebView for Payment Gateway (NEW)
+**Why**: Seamless in-app payment without leaving app
+**Security**: HTTPS-only, no card data storage
+**Result**: Native-like payment experience
+
 ---
 
 ## 📊 Performance Metrics
@@ -861,6 +1144,7 @@ navigation.navigate('ServiceDetails', { serviceId });
 | BookingsScreen | 2s | 0ms (cached) |
 | HomeScreen | 3s | 0.5s (first load), 0ms (cached) |
 | ExploreScreen | Variable | Debounced (90% fewer calls) |
+| PaymentProcessingScreen | N/A | <1s initiation, <2s validation |
 | Any cached screen | Fresh load | 0ms (instant) |
 
 **Cache Strategy**:
@@ -870,6 +1154,7 @@ navigation.navigate('ServiceDetails', { serviceId });
 - Notifications: 2min stale, auto-refetch every 30s
 - Favorites: 2min stale
 - Addresses: 5min stale
+- **Payments**: 1min stale (payment status), mutations not cached
 
 ---
 
@@ -880,6 +1165,33 @@ navigation.navigate('ServiceDetails', { serviceId });
 1. Check `API_URL` in `src/constants/config.ts`
 2. Use device IP (not localhost) for physical devices
 3. Ensure backend is running and accessible
+
+### Issue: Payment WebView not loading
+**Solution**:
+1. Verify `react-native-webview` is installed: `npx expo install react-native-webview`
+2. Check payment URL is valid HTTPS
+3. Ensure backend Noqoody credentials are correct
+4. Test on physical device (WebView works better than emulator)
+5. Check network connectivity
+
+### Issue: Payment return URL not working (Expo Go)
+**Solution**:
+1. **Expo Go doesn't support custom deep links**
+2. Backend must use `http://` URLs for development:
+```bash
+   MOBILE_APP_URL=http://localhost:8081
+   # Or
+   MOBILE_APP_URL=http://192.168.1.100:8081
+```
+3. For production, create standalone build with custom scheme
+
+### Issue: Payment succeeds but booking not created
+**Solution**:
+1. Check `payment_transactions` table in database
+2. Verify `payment_logs` for error details
+3. Ensure customer has valid email/phone in database
+4. Check backend logs for validation errors
+5. Verify booking data in `gateway_request_payload`
 
 ### Issue: Push notifications not working
 **Solution**:
@@ -901,6 +1213,69 @@ navigation.navigate('ServiceDetails', { serviceId });
 
 ---
 
+## 🔐 Security Best Practices
+
+### Payment Security
+- ✅ No credit card data stored in app
+- ✅ HTTPS-only WebView for payments
+- ✅ Payment URLs expire after 30 minutes
+- ✅ Transaction validation on backend
+- ✅ HMAC signature verification (backend)
+- ✅ JWT authentication for payment APIs
+
+### Data Protection
+- ✅ JWT tokens stored securely (AsyncStorage)
+- ✅ Auto logout on token expiry
+- ✅ Input validation on forms
+- ✅ Secure API communication (HTTPS)
+- ✅ No sensitive data in logs
+
+---
+
+## 📈 Payment Flow Diagram
+```
+Customer App                Backend API              Noqoody Gateway
+     │                           │                         │
+     │  1. Select "Pay Online"   │                         │
+     ├──────────────────────────>│                         │
+     │                           │                         │
+     │  2. POST /payments/       │                         │
+     │     initiate (booking     │  3. Generate payment    │
+     │     data)                 ├────────────────────────>│
+     │                           │                         │
+     │                           │  4. Payment URL         │
+     │  5. Payment URL           │<────────────────────────│
+     │<──────────────────────────│                         │
+     │                           │                         │
+     │  6. Open WebView          │                         │
+     │     (Noqoody page)        │                         │
+     ├───────────────────────────────────────────────────>│
+     │                           │                         │
+     │  7. Customer pays         │                         │
+     │───────────────────────────────────────────────────>│
+     │                           │                         │
+     │  8. Return to app         │                         │
+     │<───────────────────────────────────────────────────│
+     │                           │                         │
+     │  9. GET /payments/        │                         │
+     │     validate/:ref         │ 10. Verify payment      │
+     ├──────────────────────────>├────────────────────────>│
+     │                           │                         │
+     │                           │ 11. Payment confirmed   │
+     │                           │<────────────────────────│
+     │                           │                         │
+     │                           │ 12. Create booking      │
+     │                           │     (in database)       │
+     │                           │                         │
+     │ 13. Booking ID            │                         │
+     │<──────────────────────────│                         │
+     │                           │                         │
+     │ 14. Show success          │                         │
+     │                           │                         │
+```
+
+---
+
 ## Support
 
 **Key Files for Reference**:
@@ -908,3 +1283,7 @@ navigation.navigate('ServiceDetails', { serviceId });
 - Navigation types: `src/navigation/types.ts`
 - API services: `src/services/`
 - React Query config: `src/utils/queryClient.ts`
+- Payment services: `src/services/payments.ts`
+- Payment hooks: `src/hooks/usePayments.ts`
+- Payment screen: `src/screens/payments/PaymentProcessingScreen.tsx`
+
