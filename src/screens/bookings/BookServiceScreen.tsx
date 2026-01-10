@@ -84,6 +84,9 @@ export const BookServiceScreen: React.FC = () => {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [customerNotes, setCustomerNotes] = useState('');
+  
+  // ✅ NEW: Payment method state
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'noqoody'>('cash');
 
   const [timeSlots, setTimeSlots] = useState<SlotUI[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -243,28 +246,32 @@ export const BookServiceScreen: React.FC = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!selectedDate || !selectedTimeStr) {
-      Alert.alert('Error', 'Please complete all required fields');
-      return;
-    }
+  // UPDATED: Handle payment method in booking submission
+const handleSubmit = async () => {
+  if (!selectedDate || !selectedTimeStr) {
+    Alert.alert('Error', 'Please complete all required fields');
+    return;
+  }
 
-    const slot = timeSlots.find((s) => s.time === selectedTimeStr);
-    if (slot && !slot.available) {
-      Alert.alert('Error', 'This time slot is not available. Please choose another one.');
-      return;
-    }
+  const slot = timeSlots.find((s) => s.time === selectedTimeStr);
+  if (slot && !slot.available) {
+    Alert.alert('Error', 'This time slot is not available. Please choose another one.');
+    return;
+  }
 
-    setSubmitting(true);
+  setSubmitting(true);
 
-    try {
-      const year = selectedDate.getFullYear();
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-      
-      const timeStr = selectedTimeStr + ':00';
+  try {
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+    
+    const timeStr = selectedTimeStr + ':00';
 
+    // ✅ UPDATED: Different flow for cash vs online payment
+    if (paymentMethod === 'cash') {
+      // Cash payment: Create booking immediately
       const bookingInput = {
         service_id: serviceId,
         scheduled_date: dateStr,
@@ -282,15 +289,38 @@ export const BookServiceScreen: React.FC = () => {
 
       resetBookingData();
       navigation.replace('BookingSuccess', { bookingId: booking.id });
-    } catch (error: any) {
-      Alert.alert(
-        'Booking Failed',
-        error.response?.data?.error || 'Failed to create booking. Please try again.'
-      );
-    } finally {
-      setSubmitting(false);
+      
+    } else {
+      // ✅ Online payment: Go to payment screen WITHOUT creating booking
+      const bookingData = {
+        service_id: serviceId,
+        scheduled_date: dateStr,
+        scheduled_time: timeStr,
+        address_id: selectedAddressId || undefined,
+        addons:
+          selectedAddonIds.length > 0
+            ? selectedAddonIds.map((id) => ({ addon_id: id, quantity: 1 }))
+            : undefined,
+        customer_notes: customerNotes || undefined,
+      };
+
+      resetBookingData();
+      
+      // Navigate to payment screen with booking data
+      navigation.replace('PaymentProcessing', { 
+        bookingData, // ✅ Pass data, not booking ID
+        amount: pricing.subtotal,
+      });
     }
-  };
+  } catch (error: any) {
+    Alert.alert(
+      'Booking Failed',
+      error.response?.data?.error || 'Failed to create booking. Please try again.'
+    );
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const toggleAddon = (addonId: string) => {
     setSelectedAddonIds((prev) =>
@@ -746,11 +776,74 @@ export const BookServiceScreen: React.FC = () => {
                 <Text style={styles.pricingTotalLabel}>Total</Text>
                 <Text style={styles.pricingTotal}>QAR {pricing.subtotal.toFixed(0)}</Text>
               </View>
+            </View>
 
-              <View style={styles.paymentMethod}>
-                <Ionicons name="cash" size={18} color="#10B981" />
-                <Text style={styles.paymentMethodText}>Cash on service</Text>
-              </View>
+            {/* ✅ NEW: Payment Method Selection */}
+            <View style={styles.paymentMethodSection}>
+              <Text style={styles.sectionLabel}>Payment Method</Text>
+              
+              {/* Cash Option */}
+              <TouchableOpacity
+                style={[styles.paymentMethodCard, paymentMethod === 'cash' && styles.paymentMethodCardSelected]}
+                onPress={() => setPaymentMethod('cash')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.paymentMethodRadio}>
+                  {paymentMethod === 'cash' ? (
+                    <LinearGradient
+                      colors={[COLORS.primary, COLORS.secondary]}
+                      style={styles.radioSelected}
+                    >
+                      <Ionicons name="checkmark" size={12} color="#FFF" />
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.radioUnselected} />
+                  )}
+                </View>
+
+                <View style={styles.paymentMethodIcon}>
+                  <Ionicons name="cash" size={24} color="#10B981" />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentMethodTitle}>Cash on Service</Text>
+                  <Text style={styles.paymentMethodDescription}>Pay when the service is completed</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Noqoody Option */}
+              <TouchableOpacity
+                style={[styles.paymentMethodCard, paymentMethod === 'noqoody' && styles.paymentMethodCardSelected]}
+                onPress={() => setPaymentMethod('noqoody')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.paymentMethodRadio}>
+                  {paymentMethod === 'noqoody' ? (
+                    <LinearGradient
+                      colors={[COLORS.primary, COLORS.secondary]}
+                      style={styles.radioSelected}
+                    >
+                      <Ionicons name="checkmark" size={12} color="#FFF" />
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.radioUnselected} />
+                  )}
+                </View>
+
+                <View style={styles.paymentMethodIcon}>
+                  <Ionicons name="card" size={24} color={COLORS.primary} />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentMethodTitle}>Pay by Credit or Debit Card</Text>
+                  <Text style={styles.paymentMethodDescription}>Secure payment with credit/debit card</Text>
+                </View>
+
+                <View style={styles.secureBadge}>
+                  <Ionicons name="shield-checkmark" size={14} color="#10B981" />
+                  <Text style={styles.secureBadgeText}>Secure</Text>
+                </View>
+              </TouchableOpacity>
             </View>
 
             {/* Notes */}
@@ -1351,5 +1444,58 @@ continueText: {
   fontSize: 16,
   fontWeight: '700',
   color: '#FFFFFF',
+},
+paymentMethodSection: {
+  marginTop: 20,
+},
+paymentMethodCard: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: COLORS.background.secondary,
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 12,
+  borderWidth: 2,
+  borderColor: 'transparent',
+},
+paymentMethodCardSelected: {
+  borderColor: COLORS.primary,
+  backgroundColor: '#EEF2FF',
+},
+paymentMethodRadio: {
+  marginRight: 12,
+},
+paymentMethodIcon: {
+  width: 48,
+  height: 48,
+  borderRadius: 24,
+  backgroundColor: '#F3F4F6',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 12,
+},
+paymentMethodTitle: {
+  fontSize: 16,
+  fontWeight: '600',
+  color: COLORS.text.primary,
+  marginBottom: 4,
+},
+paymentMethodDescription: {
+  fontSize: 13,
+  color: COLORS.text.secondary,
+},
+secureBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#ECFDF5',
+  paddingHorizontal: 8,
+  paddingVertical: 4,
+  borderRadius: 12,
+  gap: 4,
+},
+secureBadgeText: {
+  fontSize: 11,
+  fontWeight: '600',
+  color: '#10B981',
 },
 });

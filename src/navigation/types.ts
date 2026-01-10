@@ -19,7 +19,18 @@ export type HomeStackParamList = {
   BookService: { serviceId: string };
   BookingSuccess: { bookingId: string };
   Notifications: undefined;
-  ProviderDetails: { providerId: string }; // ✅ Added
+  ProviderDetails: { providerId: string };
+  PaymentProcessing: {
+    bookingData: {
+      service_id: string;
+      scheduled_date: string;
+      scheduled_time: string;
+      address_id?: string;
+      addons?: { addon_id: string; quantity?: number }[];
+      customer_notes?: string;
+    };
+    amount: number;
+  };
 };
 
 export type SearchStackParamList = {

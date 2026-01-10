@@ -123,6 +123,13 @@ export const queryKeys = {
     details: () => [...queryKeys.providers.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.providers.details(), id] as const,
   },
+
+  // Payments
+  payments: {
+    all: ['payments'] as const,
+    status: (bookingId: string) => [...queryKeys.payments.all, 'status', bookingId] as const,
+    transaction: (transactionId: string) => [...queryKeys.payments.all, 'transaction', transactionId] as const,
+  },
 };
 
 /**

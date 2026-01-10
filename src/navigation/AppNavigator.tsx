@@ -23,7 +23,9 @@ import { ServiceDetailsScreen } from '../screens/home/ServiceDetailsScreen';
 import { FavoritesScreen } from '../screens/favorites/FavoritesScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { ProviderDetailsScreen } from '../screens/home/ProviderDetailsScreen';
-import { ReviewScreen } from '../screens/bookings/ReviewScreen'; // ✅ NEW IMPORT
+import { ReviewScreen } from '../screens/bookings/ReviewScreen';
+import { PaymentProcessingScreen } from '../screens/payments/PaymentProcessingScreen';
+
 
 import { COLORS } from '../constants/colors';
 
@@ -136,6 +138,11 @@ function HomeStackNavigator() {
           animation: 'slide_from_bottom'
         }}
       />
+      <HomeStack.Screen
+        name="PaymentProcessing"
+        component={PaymentProcessingScreen}
+        options={{ headerShown: false, animation: 'slide_from_right' }}
+      />
     </HomeStack.Navigator>
   );
 }
@@ -212,7 +219,11 @@ function SearchStackNavigator() {
           animation: 'slide_from_right'
         }}
       />
-      
+      <SearchStack.Screen
+        name="PaymentProcessing"
+        component={PaymentProcessingScreen}
+        options={{ headerShown: false, animation: 'slide_from_right' }}
+      />    
     </SearchStack.Navigator>
   );
 }
@@ -347,6 +358,11 @@ function FavoritesStackNavigator() {
           headerShown: false,
           animation: 'slide_from_bottom'
         }}
+      />
+      <FavoritesStack.Screen
+        name="PaymentProcessing"
+        component={PaymentProcessingScreen}
+        options={{ headerShown: false, animation: 'slide_from_right' }}
       />
     </FavoritesStack.Navigator>
   );

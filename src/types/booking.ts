@@ -45,6 +45,6 @@ export interface CreateBookingInput {
   scheduled_date: string;
   scheduled_time: string;
   addons?: { addon_id: string; quantity?: number }[];
-  payment_method?: 'cash' | 'card' | 'wallet';
+  payment_method?: 'cash' | 'card' | 'wallet' | 'noqoody'; 
   customer_notes?: string;
 }
